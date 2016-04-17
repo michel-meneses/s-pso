@@ -4,6 +4,9 @@
 #include<string.h>
 #include<stdlib.h>
 #include<time.h>
+#include <cuda.h>
+#include <curand_kernel.h>
+#include <math.h>
 
 // DEFINIÇÃO DE CONSTANTES
 
@@ -33,9 +36,10 @@
 #define COV 6																														// suporte;
 #define SUP 7
 
-const double MAX_PHI = 1;
-const double MAX_OMEGA = 0.8;
-const int INFINITO = 1000000;
+__device__ const double MAX_PHI = 1;
+__device__ const double MAX_OMEGA = 0.8;
+__device__ const int INFINITO = 1000000;
+const int MENOS_INFINITO = -1000000;
 
 // DEFINIÇÃO DE ESTRUTURAS
 
@@ -78,6 +82,7 @@ struct parametros{
 	char* funcoes_obj_pareto;																									// sequência de bits que indicam as funções objetivos a serem consideradas na dominância de Pareto;
 	int quant_regras_pareto;																									// nº de regras que serão geradas e analisadas quanto à dominância de pareto; 
 	int quant_particulas;																										// quantidade de partículas de um enxame;
+	int quant_enxames;																											// quantidade de enxames criados
 	int tamanho_arquivo;																										// quantidade máxima de soluções do S-PSO
 	int metodo_dopagem_solucao;																									// forma de inserir regras dominadas temporariamente no arquivo solução;
 	int metodo_gerar_regras;																									// forma de gerar regras aleatórias. Gerar regras uniformimente aleatórias = 0, privilegiar o valor "_" = 1 (caso seja 1, atribuir um valor ao campo "prob_valor_vazio");
@@ -666,29 +671,29 @@ void imprimeFuncaoObj(regra r, int indice){
 	}
 }
 
-regra* geraRegras(parametros param, int quant_regras, atributo* atrib, int quant_atrib, int classe, exemplo* exemplos, int quant_exemp){
+/* regra* geraRegras(parametros param, int quant_regras, atributo* atrib, int quant_atrib, int classe, exemplo* exemplos, int quant_exemp){
 
-	int i;
-	regra* regras = (regra*)calloc(quant_regras, sizeof(regra));
-	if (regras == NULL){
+int i;
+regra* regras = (regra*)calloc(quant_regras, sizeof(regra));
+if (regras == NULL){
 
-		printf("\nErro de alcocacao!");
-		system("pause");
-		exit(1);
-	}
-
-	for (i = 0; i < quant_regras; i++){
-
-		*(regras + i) = geraRegra(param, atrib, quant_atrib, classe);
-		preencheMatrizCont((regras + i), exemplos, quant_exemp, quant_atrib);
-		calculaFuncoesObj((regras + i), quant_atrib, atrib, quant_exemp);
-		//imprimeRegra(*(regras + i), quant_atrib);
-		//imprimeMatrizCont(*(regras + i));
-		//imprimeFuncoesObj(*(regras + i));
-	}
-
-	return regras;
+printf("\nErro de alcocacao!");
+system("pause");
+exit(1);
 }
+
+for (i = 0; i < quant_regras; i++){
+
+*(regras + i) = geraRegra(param, atrib, quant_atrib, classe);
+preencheMatrizCont((regras + i), exemplos, quant_exemp, quant_atrib);
+calculaFuncoesObj((regras + i), quant_atrib, atrib, quant_exemp);
+//imprimeRegra(*(regras + i), quant_atrib);
+//imprimeMatrizCont(*(regras + i));
+//imprimeFuncoesObj(*(regras + i));
+}
+
+return regras;
+} */
 
 /* Dado uma string, a função retorna o restante da linha de um arquivo após tal string, somente quando a linha começa pela string*/
 char* saltaStringArq(char* string, FILE* arq){
@@ -764,6 +769,7 @@ void carregaParametros(FILE* file, parametros* param){
 	(*param).funcoes_obj_pareto = strtok(saltaStringArq("@dominancia_de_pareto:", file), "\n");
 	(*param).quant_regras_pareto = atoi(saltaStringArq("@quant_regras_pareto:", file));
 	(*param).quant_particulas = atoi(saltaStringArq("@quant_particulas:", file));
+	(*param).quant_enxames = atoi(saltaStringArq("@quant_enxames:", file));
 	(*param).tamanho_arquivo = atoi(saltaStringArq("@tamanho_arquivo:", file));
 	(*param).metodo_dopagem_solucao = atoi(saltaStringArq("@metodo_dopagem_solucao:", file));
 	(*param).metodo_gerar_regras = atoi(saltaStringArq("@metodo_gerar_regras:", file));
@@ -784,6 +790,7 @@ void imprimeParametros(parametros param){
 	printf("Funcoes objetivo de Pareto = %s\n", param.funcoes_obj_pareto);
 	printf("Quantidade de regras de Pareto = %d\n", param.quant_regras_pareto);
 	printf("Quantidade de particulas = %d\n", param.quant_particulas);
+	printf("Quantidade de enxames = %d\n", param.quant_enxames);
 	printf("Tamanho maximo do arquivo = %d\n", param.tamanho_arquivo);
 	printf("Método de dopagem de solucao = %d\n", param.metodo_dopagem_solucao);
 	printf("Método de geração de regras = %d\n", param.metodo_gerar_regras);
@@ -877,7 +884,6 @@ regiao_pareto inicializaPareto(parametros param){
 }
 
 void inserePareto(regiao_pareto* pareto, regra r){
-
 	int i, inserido = 0;
 
 	for (i = 0; i < (*pareto).quant_sol_pareto; i++){
@@ -998,7 +1004,7 @@ regiao_pareto dominanciaDePareto(parametros param, regra* regras, int quant_regr
 
 				if (dominaPorPareto(*(regras + i), pareto.solucoes[j], pareto) == -1){
 					pareto.solucoes[j].nula = 1;
-					pareto.solucoes[i].quant_dominadores++;
+					pareto.solucoes[j].quant_dominadores++;
 				}
 				else if (dominaPorPareto(*(regras + i), pareto.solucoes[j], pareto) == 1){
 					//dominada = 1;
@@ -1023,7 +1029,40 @@ regiao_pareto dominanciaDePareto(parametros param, regra* regras, int quant_regr
 
 //////////////////////////////////////// INÍCIO S-PSO ////////////////////////////////////////
 
-double** inicializaVelocidadeParticula(atributo* atrib, int quant_atrib, int indice){
+/*aloca no device os espaços de memória necessários para o armazenamento da velocidade de uma partícula e
+preenche tais espaços com a velocidade da partícula armazenada no host*/
+double** carregaVelocidadeParticulaDevice(particula p, atributo* atrib, int quant_atrib){
+
+	//aloca vetor vel no próprio host
+	double** vel = (double**)calloc(quant_atrib, sizeof(double*));
+	if (vel == NULL){
+
+		printf("\nErro de alcocacao!");
+		system("pause");
+		exit(1);
+	}
+
+	//para cada ponteiro de vel, aloca espaço no device e copia valor do host
+	for (int i = 0; i < quant_atrib; i++){
+		cudaMalloc((void **)&vel[i], (atrib[i].quant_real + 1) * sizeof(double));
+		if (vel[i] == NULL){
+
+			printf("\nErro de alcocacao!");
+			system("pause");
+			exit(1);
+		}
+		cudaMemcpy(vel[i], p.velocidade[i], (atrib[i].quant_real + 1) * sizeof(double), cudaMemcpyHostToDevice);
+	}
+
+	//aloca vetor vel_d no device e copia de vel as referências aos ponteiros alocados no device
+	double** vel_d; 
+	cudaMalloc(&vel_d, quant_atrib * sizeof(double));
+	cudaMemcpy(vel_d, vel, quant_atrib * sizeof(double), cudaMemcpyHostToDevice);
+
+	return vel_d;
+}
+
+double** inicializaVelocidadeParticula(atributo* atrib, int quant_atrib){
 
 	double** vel = (double**)calloc(quant_atrib, sizeof(double*));
 	if (vel == NULL){
@@ -1052,7 +1091,7 @@ double** inicializaVelocidadeParticula(atributo* atrib, int quant_atrib, int ind
 	return vel;
 }
 
-particula criaParticula(parametros param, atributo* atrib, int quant_atrib, int i){
+particula criaParticula(parametros param, atributo* atrib, int quant_atrib){
 
 	particula p;
 	p.posicao = geraRegra(param, atrib, quant_atrib, param.classe);
@@ -1060,7 +1099,7 @@ particula criaParticula(parametros param, atributo* atrib, int quant_atrib, int 
 	p.lBest = p.posicao;
 	p.gBest = p.posicao;
 	p.gBest.nula = 1;
-	p.velocidade = inicializaVelocidadeParticula(atrib, quant_atrib, i);
+	p.velocidade = inicializaVelocidadeParticula(atrib, quant_atrib);
 
 	return p;
 }
@@ -1078,7 +1117,7 @@ particula* criaEnxame(parametros param, atributo* atrib, int quant_atrib){
 	int i;
 	for (i = 0; i < param.quant_particulas; i++){
 
-		enxame[i] = criaParticula(param, atrib, quant_atrib, i);
+		enxame[i] = criaParticula(param, atrib, quant_atrib);
 
 	}
 
@@ -1275,7 +1314,7 @@ void setLBest(parametros param, regiao_pareto pareto, particula* enxame){
 	}
 }
 
-int comparaSENS(const void *a, const void *b){
+__device__ __host__ int comparaSENS(const void *a, const void *b){
 	regra *x = (regra *)a;
 	regra *y = (regra *)b;
 
@@ -1286,7 +1325,7 @@ int comparaSENS(const void *a, const void *b){
 	return 0;
 }
 
-int comparaSPEC(const void *a, const void *b){
+__device__ __host__ int comparaSPEC(const void *a, const void *b){
 	regra *x = (regra *)a;
 	regra *y = (regra *)b;
 
@@ -1759,72 +1798,935 @@ void insereNaoDominadasPorOrdemDeCrowdDistance(parametros param, regra* regras, 
 	}
 }
 
-regiao_pareto SPSO(parametros param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, FILE* output){
+//INÍCIO DE FUNÇÕES PARALELAS//
 
-	particula* enxame = criaEnxame(param, atrib, quant_atrib);
-	calculaObjetivosEnxame(enxame, param, exemplos, quant_exemp, atrib, quant_atrib);
-	regra* regras_enxame = enxameParaRegras(param, enxame);
-	regiao_pareto pareto = inicializaPareto(param);
+//inicializa seeds usadas para gerar valores aleatórios nos kernels CUDA
+__global__ void setup_kernel(curandState * state, unsigned long seed)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	curand_init(seed, idx, 0, &state[idx]);
+}
 
-	if (param.metodo_dopagem_solucao == 0)																			// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
-		insereDominadasPorOrdemDeDominadores(param, regras_enxame, param.quant_particulas, &pareto);
-	else if (param.metodo_dopagem_solucao == 1)
-		insereDominadasPorOrdemDeCrowdDistance(param, regras_enxame, param.quant_particulas, &pareto);
-	else
-		insereNaoDominadasPorOrdemDeCrowdDistance(param, regras_enxame, param.quant_particulas, &pareto);
+/* gera valor intiero aleatório*/
+__device__ int device_getRandom(curandState *globalState){
+	return (int)truncf(curand_uniform(globalState) * 100000);
+}
 
-	setGBest(param, pareto, enxame);
+/* Zera todas as posições da matriz de contingência de uma regra */
+__device__ void device_zeraMatrizCont(regra* r){
 
-	regra* total;
-	//FILE* arq_solucao = criaArquivo();
-	//insereObjEmArquivo(pareto, enxame, param, arq_solucao, 0);
+	int i;
 
-	int i, j, quant_regras;
-	for (i = 0; i < param.bl_interacoes; i++){
-		for (j = 0; j < param.quant_particulas; j++){
+	for (i = 0; i < quant_mat_cont; i++){
 
-			if (param.classe == -1){
+		(*r).mat_cont[i] = 0;
+	}
+}
 
-				setVelocidadeParticula(&enxame[j], atrib, quant_atrib, param);
-				setPosicaoParticula(&enxame[j], atrib, quant_atrib);
-			}
-			else{
+__device__ void device_preencheMatrizCont(regra* r, exemplo* exemplos, int quant_exemp, int quant_atrib){
 
-				setVelocidadeParticula(&enxame[j], atrib, quant_atrib - 1, param);
-				setPosicaoParticula(&enxame[j], atrib, quant_atrib - 1);
+	device_zeraMatrizCont(r);
+	int i, j, b, h;
+
+	for (i = 0; i < quant_exemp; i++){
+
+		b = 1;
+		h = 1;
+
+		for (j = 0; j < quant_atrib - 1; j++){
+
+			if (((*(exemplos + i)).campos[j] != (*r).valores[j]) && ((*r).valores[j] != -1)){
+				b = 0;
 			}
 		}
 
-		calculaObjetivosEnxame(enxame, param, exemplos, quant_exemp, atrib, quant_atrib);
-		setLBest(param, pareto, enxame);
-		regras_enxame = enxameParaRegras(param, enxame);
-		total = uneRegras(regras_enxame, param.quant_particulas, pareto.solucoes, pareto.quant_sol_pareto);
-		quant_regras = param.quant_particulas + pareto.quant_sol_pareto;
-		total = apagaRegrasIguais(total, &quant_regras, quant_atrib);
-		pareto = inicializaPareto(param);
+		if ((*(exemplos + i)).campos[quant_atrib - 1] != (*r).valores[quant_atrib - 1]){
+			h = 0;
+		}
 
-		if (param.metodo_dopagem_solucao == 0)																		// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
-			insereDominadasPorOrdemDeDominadores(param, total, quant_regras, &pareto);
-		else if (param.metodo_dopagem_solucao == 1)
-			insereDominadasPorOrdemDeCrowdDistance(param, total, quant_regras, &pareto);
+		if (b == 1)
+			(*r).mat_cont[B]++;
 		else
-			insereNaoDominadasPorOrdemDeCrowdDistance(param, total, quant_regras, &pareto);
+			(*r).mat_cont[_B]++;
 
-		setGBest(param, pareto, enxame);
-		insereObjEmArquivo(pareto, enxame, param, output, i + 1);
+		if (h == 1)
+			(*r).mat_cont[H]++;
+		else
+			(*r).mat_cont[_H]++;
+
+		if (b == 1 && h == 1)
+			(*r).mat_cont[BH]++;
+
+		else if (b == 1 && h == 0)
+			(*r).mat_cont[B_H]++;
+
+		else if (b == 0 && h == 1)
+			(*r).mat_cont[_BH]++;
+
+		else if (b == 0 && h == 0)
+			(*r).mat_cont[_B_H]++;
 	}
-	removeDominadas(&pareto);
-	insereSolucoesEmArquivo(pareto, param, output);
-	insereNomesSolucoesArquivo(pareto, param, output, atrib, quant_atrib);
-	imprimeDominioPareto(pareto, quant_atrib);
+}
 
-	free(enxame);
-	free(regras_enxame);
-	free(total);
-	fclose(output);
+__device__ void device_calculaFuncoesObj(regra* r, int quant_atrib, atributo* atrib, int quant_exemp){
+	int quant_classes = (*(atrib + quant_atrib - 1)).quant_real;
+
+	if ((*r).mat_cont[B] != 0)
+		(*r).func_ob[ACC] = (double)((*r).mat_cont[BH]) / (*r).mat_cont[B];
+	else
+		(*r).func_ob[ACC] = -1;
+	if ((*r).mat_cont[B] != 0)
+		(*r).func_ob[ERR] = (double)((*r).mat_cont[B_H]) / (*r).mat_cont[B];
+	else
+		(*r).func_ob[ERR] = -1;
+	if ((*r).mat_cont[_B] != 0)
+		(*r).func_ob[NEGREL] = (double)((*r).mat_cont[_B_H]) / (*r).mat_cont[_B];
+	else
+		(*r).func_ob[NEGREL] = -1;
+	if (((*r).mat_cont[B] + quant_classes) != 0)
+		(*r).func_ob[ACCLP] = (double)((*r).mat_cont[BH] + 1) / ((*r).mat_cont[B] + quant_classes);
+	else
+		(*r).func_ob[ACCLP] = -1;
+	if ((*r).mat_cont[H] != 0)
+		(*r).func_ob[SENS] = (double)((*r).mat_cont[BH]) / (*r).mat_cont[H];
+	else
+		(*r).func_ob[SENS] = -1;
+	if ((*r).mat_cont[_H] != 0)
+		(*r).func_ob[SPEC] = (double)((*r).mat_cont[_B_H]) / (*r).mat_cont[_H];
+	else
+		(*r).func_ob[SPEC] = -1;
+	if (quant_exemp != 0)
+		(*r).func_ob[COV] = (double)((*r).mat_cont[B]) / quant_exemp;
+	else
+		(*r).func_ob[COV] = -1;
+	if (quant_exemp != 0)
+		(*r).func_ob[SUP] = (double)((*r).mat_cont[BH]) / quant_exemp;
+	else
+		(*r).func_ob[SUP] = -1;
+}
+
+__device__ double** device_inicializaVelocidadeParticula(atributo* atrib, int quant_atrib, curandState* globalState){
+
+	double** vel = (double**)malloc(quant_atrib * sizeof(double*));
+	if (vel == NULL){
+		printf("\nErro de alcocacao!");
+	}
+
+	int i, j;
+	for (i = 0; i < quant_atrib; i++){
+
+		vel[i] = (double*)malloc((atrib[i].quant_real + 1) * sizeof(double));
+		if (vel[i] == NULL){
+			printf("\nErro de alcocacao!");
+		}
+		for (j = 0; j < atrib[i].quant_real + 1; j++){
+
+			vel[i][j] = (device_getRandom(globalState) % 101) / 100.0;
+		}
+	}
+
+	return vel;
+}
+
+__device__ regra device_inicializaRegra(){
+	regra r;
+	int i;
+
+	for (i = 0; i < quant_mat_cont; i++)																						// inicializa com 0's a matriz de contigência;
+		r.mat_cont[i] = 0;
+
+	r.nula = 1;																												// regra inicialmete é nula;
+	r.crowding_distance = 0;
+	r.quant_dominadores = 0;
+
+	return r;
+}
+
+__device__ regra device_geraRegra(parametros param, atributo* atrib, int quant_atrib, int classe, curandState* globalState){
+
+	regra r = device_inicializaRegra();
+	int i, limiar;
+
+	//srand( (unsigned) time(NULL) );
+	for (i = 0; i < quant_atrib - 1; i++){
+
+		if (param.metodo_gerar_regras == 1){
+
+			limiar = device_getRandom(globalState) % 101;
+			if (param.prob_valor_vazio >= limiar)
+				r.valores[i] = -1;
+			else
+				r.valores[i] = device_getRandom(globalState) % ((*(atrib + i)).quant_real);
+		}
+		else if (param.metodo_gerar_regras == 0)
+			r.valores[i] = device_getRandom(globalState) % ((*(atrib + i)).quant_real + 1) - 1;
+	}
+
+	switch (classe){
+
+	case 0:
+		r.valores[quant_atrib - 1] = 0;
+		break;
+
+	case 1:
+		r.valores[quant_atrib - 1] = 1;
+		break;
+
+	default:
+		r.valores[quant_atrib - 1] = device_getRandom(globalState) % ((*(atrib + i)).quant_real);												// valor aleatório para a classe;
+	}
+
+	r.nula = 0;																												// regra deixa de ser nula;
+
+	return r;
+}
+
+__device__ regra* device_geraRegras(parametros param, int quant_regras, atributo* atrib, int quant_atrib, int classe, exemplo* exemplos, int quant_exemp, curandState* globalState){
+
+	int i;
+	regra* regras = (regra*)malloc(quant_regras * sizeof(regra));
+	if (regras == NULL){
+		printf("\nErro de alcocacao!");
+	}
+
+	for (i = 0; i < quant_regras; i++){
+
+		*(regras + i) = device_geraRegra(param, atrib, quant_atrib, classe, globalState);
+		device_preencheMatrizCont((regras + i), exemplos, quant_exemp, quant_atrib);
+		device_calculaFuncoesObj((regras + i), quant_atrib, atrib, quant_exemp);
+		//imprimeRegra(*(regras + i), quant_atrib);
+		//imprimeMatrizCont(*(regras + i));
+		//imprimeFuncoesObj(*(regras + i));
+	}
+
+	return regras;
+}
+
+/*Dado dois vetores de regras v1 e v2 e seus respectivos tamanhos t1 e t2,
+retorna um novo vetor v de tamanho t1 + t2 contendo as regras de v1 e v2*/
+__device__ regra* device_uneRegras(regra* regras1, int quant_regras1, regra* regras2, int quant_regras2){
+
+	regra* regras = (regra*)malloc((quant_regras1 + quant_regras2) * sizeof(regra));
+	if (regras == NULL){
+
+		printf("\nErro de alcocacao!");
+	}
+
+	int i;
+	for (i = 0; i < quant_regras1; i++){
+
+		if (regras1[i].nula != 1)
+			regras[i] = regras1[i];
+	}
+	for (i = 0; i < quant_regras2; i++){
+
+		if (regras2[i].nula != 1)
+			regras[i + quant_regras1] = regras2[i];
+	}
+
+	return regras;
+}
+
+__device__ int device_verificaIgualdadeRegras(regra r1, regra r2, int quant_atrib){
+
+	int iguais = 1;
+	int i;
+
+	for (i = 0; i < quant_atrib; i++){
+
+		if (r1.valores[i] != r2.valores[i])
+			iguais = 0;
+	}
+
+	return iguais;
+}
+
+__device__ regra* device_apagaRegrasIguais(regra* r, int* quant_regras, int quant_atrib){
+
+	int i, j;
+
+	for (i = 0; i < *quant_regras; i++){
+		for (j = 0; j < *quant_regras; j++){
+
+			if ((i != j) && (r[i].nula == 0) && (r[j].nula == 0) && (device_verificaIgualdadeRegras(r[i], r[j], quant_atrib) == 1)){
+
+				r[i].nula = 1;
+			}
+		}
+	}
+
+	int cont = 0;
+
+	for (i = 0; i < *quant_regras; i++){
+
+		if (r[i].nula == 0)
+			cont++;
+	}
+	//printf("\n%d %d", *quant_regras, cont);
+	regra* regras = (regra*)malloc(cont * sizeof(regra));
+	if (regras == NULL){
+
+		printf("\nErro de alcocacao!");
+	}
+
+	cont = 0;
+
+	for (i = 0; i < *quant_regras; i++){
+
+		if (r[i].nula == 0){
+
+			regras[cont] = r[i];
+			cont++;
+		}
+	}
+
+	*quant_regras = cont;
+
+	return regras;
+}
+
+/*Retorna -1 se r1 domina r2, 0 se nenhuma das duas regras domina a outra, 1 se r2 domina r1*/
+__device__ int device_dominaPorPareto(regra r1, regra r2, regiao_pareto pareto){
+
+	int i;
+	int saida = 0;
+
+	for (i = 0; i < quant_func_ob; i++){
+		if (pareto.func_obj[i] == 1){
+			if (r1.func_ob[i] > r2.func_ob[i]){
+
+				if (saida == 0 || saida == -1)
+					saida = -1;
+				else
+					return 0;
+			}
+			if (r1.func_ob[i] < r2.func_ob[i]){
+
+				if (saida == 0 || saida == 1)
+					saida = 1;
+				else
+					return 0;
+			}
+		}
+	}
+
+	return saida;
+}
+
+__device__ int device_contaRegrasNaoNulasPareto(regiao_pareto pareto){
+
+	int cont = 0;
+	int i;
+
+	for (i = 0; i < pareto.quant_sol_pareto; i++){
+
+		if (pareto.solucoes[i].nula == 0)
+			cont++;
+	}
+
+	return cont;
+}
+
+__device__ void device_apagaSolucoesNulasPareto(regiao_pareto* pareto){
+
+	int quant_sol_nao_nulas = device_contaRegrasNaoNulasPareto(*pareto);
+	regra* solucoes = (regra*)malloc(quant_sol_nao_nulas * sizeof(regra));
+	if (solucoes == NULL){
+
+		printf("\nErro de alcocacao!");
+	}
+
+	int cont = 0;
+	int i;
+
+	for (i = 0; i < (*pareto).quant_sol_pareto; i++){
+
+		if ((*pareto).solucoes[i].nula == 0){
+
+			solucoes[cont] = (*pareto).solucoes[i];
+			cont++;
+		}
+	}
+
+	(*pareto).solucoes = solucoes;
+	(*pareto).quant_sol_pareto = quant_sol_nao_nulas;
+}
+
+__device__ void device_removeDominadas(regiao_pareto* pareto){
+
+	int i;
+	for (i = 0; i < (*pareto).quant_sol_pareto; i++){
+
+		if ((*pareto).solucoes[i].quant_dominadores != 0){
+
+			(*pareto).solucoes[i].nula = 1;
+		}
+	}
+
+	device_apagaSolucoesNulasPareto(pareto);
+}
+
+__device__ particula device_criaParticula(parametros param, atributo* atrib, int quant_atrib, curandState* globalState){
+
+	particula p;
+	p.posicao = device_geraRegra(param, atrib, quant_atrib, param.classe, globalState);
+	p.lBest = p.posicao;
+	p.gBest = p.posicao;
+	p.gBest.nula = 1;
+	p.velocidade = device_inicializaVelocidadeParticula(atrib, quant_atrib, globalState);
+
+	return p;
+}
+
+__device__ regra* device_enxameParaRegras(parametros param, particula* enxame){
+
+	regra* regras = (regra*)malloc(param.quant_particulas * sizeof(regra));
+	if (regras == NULL){
+
+		printf("\nErro de alcocacao!");
+	}
+
+	int i;
+	for (i = 0; i < param.quant_particulas; i++){
+
+		regras[i] = enxame[i].posicao;
+	}
+
+	return regras;
+}
+
+__device__ void device_setGBest(parametros param, regiao_pareto pareto, particula* enxame, curandState* globalState){
+
+	int i;
+	regra r1, r2;
+
+	for (i = 0; i < param.quant_particulas; i++){
+
+		r1 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+		r2 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+
+		if (r1.crowding_distance > r2.crowding_distance)
+			enxame[i].gBest = r1;
+		else
+			enxame[i].gBest = r2;
+	}
+}
+
+__device__ double device_getOmega(){
+
+	return MAX_OMEGA;
+}
+
+__device__ double device_getPhi(curandState* globalState){
+
+	double phi;
+
+	do{
+		phi = (device_getRandom(globalState) % 101) / 100.0;
+	} while (phi > MAX_OMEGA);
+
+	return phi;
+}
+
+__device__ double device_getConst(){
+
+	return 2;
+}
+
+__device__ int device_posicaoMenosPosicao(int p1, int p2){
+	if (p1 != p2)
+		return p1;
+	else
+		return -2;	// -2 representa um valor fora do domínio dos atributo da regra;
+}
+
+__device__ double device_coefVezesPosicao(double c, int posicao, curandState* globalState){
+
+	double phi = device_getPhi(globalState);
+	if (posicao == -2)
+		return 0;
+	else if (c*phi < 1)
+		return c*phi;
+	else
+		return 1;
+}
+
+__device__ void device_coefVezesVelocidade(double* velocidade, int quant_vel){
+
+	double coef = device_getOmega();
+	int i;
+
+	for (i = 0; i < quant_vel; i++){
+
+		if (coef*velocidade[i] < 1)
+			velocidade[i] = coef*velocidade[i];
+		else
+			velocidade[i] = 1;
+	}
+}
+
+/*Dada a velocidade calculada de um valor de um atributo, verifica
+se esse valor é maior que o correspondente dentro do vetor de velocidades*/
+__device__ void device_somaVelocidades(double* velocidades, double vel, int atributo){
+	if (velocidades[atributo + 1] < vel)
+		velocidades[atributo + 1] = vel;
+}
+
+__device__ void device_setVelocidadeParticula(particula* p, atributo* atrib, int quant_atrib, parametros param, curandState* globalState){
+
+	double c1 = device_getConst();
+	double c2 = device_getConst();
+
+	int i;
+	for (i = 0; i < quant_atrib; i++){
+
+		device_coefVezesVelocidade((*p).velocidade[i], atrib[i].quant_real + 1);
+		device_somaVelocidades((*p).velocidade[i], device_coefVezesPosicao(c1, device_posicaoMenosPosicao((*p).lBest.valores[i], (*p).posicao.valores[i]), globalState), (*p).lBest.valores[i]);
+		device_somaVelocidades((*p).velocidade[i], device_coefVezesPosicao(c2, device_posicaoMenosPosicao((*p).gBest.valores[i], (*p).posicao.valores[i]), globalState), (*p).gBest.valores[i]);
+	}
+}
+
+__device__ double device_getMaiorVelocidade(double* velocidades, int quant_vel){
+
+	double vel = 0;
+	int i;
+
+	for (i = 0; i < quant_vel; i++){
+
+		if (velocidades[i] > vel)
+			vel = velocidades[i];
+	}
+
+	return vel;
+}
+
+__device__ double device_getRandFloat(double limite, curandState* globalState){
+
+	double r;
+
+	do{
+		r = (device_getRandom(globalState) % 101) / 100.0;
+	} while (r > limite);
+
+	return r;
+}
+
+__device__ int device_roleta(double* velocidade, atributo atrib, curandState* globalState){
+
+	double limite = device_getMaiorVelocidade(velocidade, atrib.quant_real + 1);
+	double alfa = device_getRandFloat(limite, globalState);
+	int posicao;
+
+	do{
+		posicao = device_getRandom(globalState) % (atrib.quant_real + 1) - 1;
+	} while (velocidade[posicao + 1] < alfa);
+
+	return posicao;
+}
+
+__device__ void device_setPosicaoParticula(particula* p, atributo* atrib, int quant_atrib, curandState* globalState){
+
+	int i;
+	for (i = 0; i < quant_atrib; i++){
+		(*p).posicao.valores[i] = device_roleta((*p).velocidade[i], atrib[i], globalState);
+	}
+}
+
+__device__ regiao_pareto device_inicializaPareto(parametros param){
+
+	regiao_pareto pareto;
+
+	pareto.solucoes = (regra*)malloc(1 * sizeof(regra));
+	if (pareto.solucoes == NULL){
+
+		printf("\nErro de alcocacao!");
+	}
+
+	pareto.solucoes[0].nula = 1;
+	pareto.quant_sol_pareto = 1;
+
+	int i;
+	for (i = 0; i < quant_func_ob; i++){
+		pareto.func_obj[i] = (param.funcoes_obj_pareto[i]) - 48;
+	}
 
 	return pareto;
 }
+
+__device__ void device_inserePareto(regiao_pareto* pareto, regra r){
+
+	int i, inserido = 0;
+
+	for (i = 0; i < (*pareto).quant_sol_pareto; i++){
+
+		if ((*pareto).solucoes[i].nula == 1){
+
+			(*pareto).solucoes[i] = r;
+			(*pareto).solucoes[i].nula = 0;
+			inserido = 1;
+			break;
+		}
+	}
+
+	if (inserido == 0){
+
+		//cria cópia da array de regras
+		int quantidade_antiga = (*pareto).quant_sol_pareto;
+		regra* copia_solucoes = (regra*)malloc(quantidade_antiga*sizeof(regra));
+		for (i = 0; i < quantidade_antiga; i++){
+			copia_solucoes[i] = (*pareto).solucoes[i];
+		}
+
+		//realoca array de regras com 1 unidade de memória a mais e carrega valores da cópia
+		free((*pareto).solucoes);
+		(*pareto).solucoes = (regra*)malloc((quantidade_antiga + 1)*sizeof(regra));
+		for (i = 0; i < quantidade_antiga; i++){
+			(*pareto).solucoes[i] = copia_solucoes[i];
+		}
+
+		//insere nova regra na nova posição alocada
+		(*pareto).quant_sol_pareto++;
+		(*pareto).solucoes[quantidade_antiga] = r;
+		(*pareto).solucoes[quantidade_antiga].nula = 0;
+	}
+}
+
+__device__ void device_zeraQuantDominadoresRegras(regra* regras, int quant_regras){
+
+	int i;
+	for (i = 0; i < quant_regras; i++){
+		regras[i].quant_dominadores = 0;
+	}
+}
+
+__device__ int device_comparaDominadores(const void *a, const void *b){
+	regra *x = (regra *)a;
+	regra *y = (regra *)b;
+
+	if ((*x).quant_dominadores >(*y).quant_dominadores)
+		return 1;
+	if ((*x).quant_dominadores < (*y).quant_dominadores)
+		return -1;
+	return 0;
+}
+
+__device__ void device_swap(void *e1, void *e2, int size) {
+	void* sp = (void*)malloc(size);
+	memcpy(sp, e1, size);
+	memcpy(e1, e2, size);
+	memcpy(e2, sp, size);
+	free(sp);
+}
+
+__device__ void device_qsort(void* base, size_t n, size_t size, int(*cmp)(const void*, const void*)) {
+	int i, j;
+
+	if (n <= 1) {
+		return;
+	}
+	i = 0; j = n;
+	while (1) {
+		do {
+			++i;
+		} while (cmp((char*)base + size*i, base) < 0 && i < n);
+		do {
+			--j;
+		} while (cmp((char*)base + size*j, base) > 0);   //no need to check j >= 0 because it will fail test when it reaches base
+		if (i > j) break;
+		device_swap((char*)base + size*i, (char*)base + size*j, size);
+	}
+	//swap the base element with the j element
+	if (j != 0) {
+		device_swap(base, (char*)base + size*j, size);
+	}
+	if (j > 0) {
+		device_qsort(base, j, size, cmp);
+	}
+	device_qsort((char*)base + size*(j + 1), n - 1 - j, size, cmp);
+}
+
+__device__ void device_ordenaRegrasMenosDominadas(regra* regras, int quant_regras){
+	device_qsort(regras, quant_regras, sizeof(regra), device_comparaDominadores);
+}
+
+__device__ int device_comparaCrowdDistances(const void *a, const void *b){
+	regra *x = (regra *)a;
+	regra *y = (regra *)b;
+
+	if ((*x).crowding_distance > (*y).crowding_distance)
+		return -1;
+	if ((*x).crowding_distance < (*y).crowding_distance)
+		return 1;
+	return 0;
+}
+
+__device__ void device_ordenaRegrasMenoresCrowdDistances(regra* regras, int quant_regras){
+	device_qsort(regras, quant_regras, sizeof(regra), device_comparaCrowdDistances);
+}
+
+__device__ void device_atualizaCrowdingDistance(regiao_pareto pareto, int objetivo, regra* regras, int quant_regras){
+
+	int i, j;
+	/* imprimeDominioParetoComObjetivos(*pareto, quant_atrib, param);
+
+	printf("\nAntigas Crowding Distances:\n");
+	for(j = 0; j < (*pareto).quant_sol_pareto; j++){
+
+	printf("%f ", (*pareto).solucoes[j].crowding_distance);
+	} */
+
+	switch (objetivo){
+	case ACC:
+		break;
+	case ERR:
+		break;
+	case NEGREL:
+		break;
+	case ACCLP:
+		break;
+	case SENS:
+		device_qsort(regras, quant_regras, sizeof(regra), comparaSENS);
+		break;
+	case SPEC:
+		device_qsort(regras, quant_regras, sizeof(regra), comparaSPEC);
+		break;
+	case COV:
+		break;
+	case SUP:
+		break;
+	}
+
+	for (i = 0; i < quant_regras; i++){
+		if (regras[i].func_ob[objetivo] == regras[0].func_ob[objetivo] || regras[i].func_ob[objetivo] == regras[quant_regras - 1].func_ob[objetivo])
+			regras[i].crowding_distance = INFINITO;
+	}
+
+	//regras[0].crowding_distance = INFINITO;
+	for (i = 1; i < quant_regras - 1; i++){
+		if (regras[i].crowding_distance != INFINITO)
+			regras[i].crowding_distance += regras[i + 1].func_ob[objetivo] - regras[i - 1].func_ob[objetivo];
+	}
+	//regras[quant_regras - 1].crowding_distance = INFINITO;
+
+	/* printf("\nNovas Crowding Distances:\n");
+	for(j = 0; j < (*pareto).quant_sol_pareto; j++){
+
+	printf("%f ", (*pareto).solucoes[j].crowding_distance);
+	} */
+}
+
+__device__ void device_atualizaCrowdingDistances(regiao_pareto pareto, regra* regras, int quant_regras){
+
+	int i;
+	for (i = 0; i < quant_func_ob; i++){
+
+		if (pareto.func_obj[i] == 1)
+			device_atualizaCrowdingDistance(pareto, i, regras, quant_regras);
+	}
+
+}
+
+__device__ void device_atualizaDominadores(regra* regras, int quant_regras, regiao_pareto pareto){
+
+	device_zeraQuantDominadoresRegras(regras, quant_regras);
+	int i, j;
+
+	for (i = 0; i < quant_regras - 1; i++){
+
+		for (j = i + 1; j < quant_regras; j++){
+
+			if (device_dominaPorPareto(regras[i], regras[j], pareto) == -1){
+				regras[j].quant_dominadores++;
+			}
+			else if (device_dominaPorPareto(regras[i], regras[j], pareto) == 1){
+				regras[i].quant_dominadores++;
+			}
+		}
+	}
+}
+
+__device__ void device_insereDominadasPorOrdemDeDominadores(parametros param, regra* regras, int quant_regras, regiao_pareto* pareto){
+
+	device_atualizaDominadores(regras, quant_regras, *pareto);
+	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
+	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+
+	int cont = 0, i = 0;
+	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
+
+		if (regras[i].quant_dominadores == 0 && (regras[i].crowding_distance != INFINITO || cont != 1)){
+			device_inserePareto(pareto, regras[i]);
+
+			if (regras[i].crowding_distance == INFINITO)
+				cont = 1;
+		}
+		i++;
+	}
+
+	device_ordenaRegrasMenosDominadas(regras, quant_regras);
+
+	i = 0;
+	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
+
+		if (regras[i].quant_dominadores != 0){
+			device_inserePareto(pareto, regras[i]);
+		}
+		i++;
+	}
+}
+
+__device__ void device_insereDominadasPorOrdemDeCrowdDistance(parametros param, regra* regras, int quant_regras, regiao_pareto* pareto){
+
+	device_atualizaDominadores(regras, quant_regras, *pareto);
+	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
+	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+
+	int i = 0;
+	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
+
+		if (regras[i].quant_dominadores == 0){
+			device_inserePareto(pareto, regras[i]);
+		}
+		i++;
+	}
+
+	i = 0;
+
+	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
+
+		if (regras[i].quant_dominadores != 0){
+			device_inserePareto(pareto, regras[i]);
+		}
+		i++;
+	}
+}
+
+__device__ void device_insereNaoDominadasPorOrdemDeCrowdDistance(parametros param, regra* regras, int quant_regras, regiao_pareto* pareto){
+
+	device_atualizaDominadores(regras, quant_regras, *pareto);
+	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
+	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+
+	int i = 0;
+	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
+
+		if (regras[i].quant_dominadores == 0){
+			device_inserePareto(pareto, regras[i]);
+		}
+		i++;
+	}
+}
+
+__global__ void criaEnxames(parametros param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, particula* enxame, curandState* globalState){
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i > param.quant_particulas * param.quant_enxames)
+		return;
+
+	enxame[i] = device_criaParticula(param, atrib, quant_atrib, &globalState[i]);
+}
+
+__global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, FILE* output, particula* enxame, regra* posicoesFinais, curandState* globalState){
+
+	int id = blockIdx.x * blockDim.x + threadIdx.x;
+	if (id > (*param).quant_particulas * (*param).quant_enxames)
+		return;
+
+	//extern __shared__ int mem[];	//memória compartilhada que armazenará as variáveis de todas as arrays dinâmicas utilizadas
+
+	//CARREGA PARTÍCULA E CALCULA FUNÇÕES OBJETIVO
+
+	particula p = enxame[id];
+	device_preencheMatrizCont(&(p.posicao), exemplos, quant_exemp, quant_atrib);
+	device_calculaFuncoesObj(&(p.posicao), quant_atrib, atrib, quant_exemp);
+	enxame[id] = p;
+
+	__syncthreads();
+
+	//CALCULA MELHORES PARTÍCULAS DO ENXAME
+
+	regra* regras_enxame;
+	regiao_pareto pareto;
+
+	if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
+	{
+		regras_enxame = device_enxameParaRegras((*param), enxame);
+		pareto = device_inicializaPareto((*param));
+
+		if ((*param).metodo_dopagem_solucao == 0)	// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
+			device_insereDominadasPorOrdemDeDominadores((*param), regras_enxame, (*param).quant_particulas, &pareto);
+		else if ((*param).metodo_dopagem_solucao == 1)
+			device_insereDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
+		else
+			device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
+		device_setGBest((*param), pareto, enxame, globalState);
+	}
+
+	__syncthreads();
+
+	//INICIA LAÇO EVOLUTIVO
+
+	regra* total;
+
+	int i, quant_regras;
+	for (i = 0; i < (*param).bl_interacoes; i++){
+		if ((*param).classe == -1){
+
+			device_setVelocidadeParticula(&enxame[id], atrib, quant_atrib, (*param), globalState);
+			device_setPosicaoParticula(&enxame[id], atrib, quant_atrib, globalState);
+		}
+		else{
+			device_setVelocidadeParticula(&enxame[id], atrib, quant_atrib - 1, (*param), globalState);
+			device_setPosicaoParticula(&enxame[id], atrib, quant_atrib - 1, globalState);
+		}
+
+		device_preencheMatrizCont(&(enxame[id].posicao), exemplos, quant_exemp, quant_atrib);
+		device_calculaFuncoesObj(&(enxame[id].posicao), quant_atrib, atrib, quant_exemp);
+
+		if (device_dominaPorPareto(enxame[id].posicao, enxame[id].lBest, pareto) == -1)
+			enxame[id].lBest = enxame[id].posicao;
+
+		__syncthreads();
+
+		//ATUALIZA DOMÍNIO DE PARETO DO ENXAME
+
+		if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
+		{
+			regras_enxame = device_enxameParaRegras((*param), enxame);
+			total = device_uneRegras(regras_enxame, (*param).quant_particulas, pareto.solucoes, pareto.quant_sol_pareto);
+			quant_regras = (*param).quant_particulas + pareto.quant_sol_pareto;
+			total = device_apagaRegrasIguais(total, &quant_regras, quant_atrib);
+			pareto = device_inicializaPareto((*param));
+
+			if ((*param).metodo_dopagem_solucao == 0)																		// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
+				device_insereDominadasPorOrdemDeDominadores((*param), total, quant_regras, &pareto);
+			else if ((*param).metodo_dopagem_solucao == 1)
+				device_insereDominadasPorOrdemDeCrowdDistance((*param), total, quant_regras, &pareto);
+			else
+				device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), total, quant_regras, &pareto);
+
+			device_setGBest((*param), pareto, enxame, globalState);
+			//insereObjEmArquivo(pareto, enxame, param, output, i + 1);
+		}
+
+		__syncthreads();
+	}
+
+	if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
+	{
+		device_removeDominadas(&pareto);
+		//insereSolucoesEmArquivo(pareto, param, output);
+		//insereNomesSolucoesArquivo(pareto, param, output, atrib, quant_atrib);
+		//imprimeDominioPareto(pareto, quant_atrib);
+	}
+	//fclose(output);
+
+	__syncthreads();
+
+	//INSERE POSIÇÃO FINAL DE CADA PARTÍCULA NO VETOR DE POSIÇÕES FINAIS
+	posicoesFinais[id] = enxame[id].posicao;
+}
+
+//FIM DE FUNÇÕES PARALELAS//
 
 //////////////////////////////////////// FIM S-PSO ////////////////////////////////////////
 
@@ -1882,66 +2784,130 @@ void imprimeSolucao(regiao_pareto solucao, atributo* atrib, int quant_atrib){
 	}
 }
 
-int main(/*int argc, char* argv[]*/){
+int main(){
 
 	system("cls");
-	//printf("ARG1 = %s\n", argv[1]);
 
-	//VARIÁVEIS
+	//AUMENTA LIMITES DE MEMÓRIA
+
+	size_t size_heap, size_stack;
+	//cudaDeviceSetLimit(cudaLimitMallocHeapSize, 20000000 * sizeof(double));
+	cudaDeviceSetLimit(cudaLimitStackSize, 10 * 2048);
+	cudaDeviceGetLimit(&size_heap, cudaLimitMallocHeapSize);
+	cudaDeviceGetLimit(&size_stack, cudaLimitStackSize);
+	printf("Heap size found to be %d; Stack size found to be %d\n", (int)size_heap, (int)size_stack);
+
+	//ALOCA E CARREGA VARIÁVEIS
+
+	//carrega parâmetros
 	FILE* arq_parametros = carregarArq("parametros.txt");
-	parametros param;																											// parâmetros para o algoritmo de busca local;
-	carregaParametros(arq_parametros, &param);
-	FILE* input = carregarArq(param.arquivo);
-	int quant_atrib = contaAtributos(input);																					// quantidade de atributos dos elementos da base de dados;
-	atributo* atrib = (atributo*)calloc(quant_atrib, sizeof(atributo));														// ponteiro para alocação dinâmica do vetor com atributos;
-	if (atrib == NULL){
+	parametros h_param;
+	carregaParametros(arq_parametros, &h_param);
+	imprimeParametros(h_param);
 
+	parametros *d_param;	//endereço de memória no device que armazenará a cópia de h_param
+	cudaMalloc(&d_param, sizeof(parametros));
+
+	char *d_funcoes_obj_pareto;	//endereço de memória no device que armazenará a cópia da string funcoes_obj_pareto contida na struct h_param
+	cudaMalloc(&d_funcoes_obj_pareto, quant_func_ob * sizeof(char));
+	cudaMemcpy(d_funcoes_obj_pareto, (h_param.funcoes_obj_pareto), quant_func_ob * sizeof(char), cudaMemcpyHostToDevice);
+
+	h_param.funcoes_obj_pareto = d_funcoes_obj_pareto;	//passa referência de string já no device e copia struct interia para a variável do device
+	cudaMemcpy(d_param, &h_param, sizeof(parametros), cudaMemcpyHostToDevice);
+	carregaParametros(arq_parametros, &h_param); //recupera referência às funções objetivo originais presentes no device
+
+	//carrega arquivos de entrada e saída
+	FILE* input = carregarArq(h_param.arquivo);
+	FILE* output = fopen("saida.txt", "w");
+
+	//carrega atributos
+	int quant_atrib = contaAtributos(input);	// quantidade de atributos dos elementos da base de dados;
+	atributo *atrib_h, *atrib_d;	// ponteiros para alocação dinâmica do vetor com atributos;
+	cudaMallocHost((void**)&atrib_h, sizeof(atributo) * quant_atrib);
+	cudaMalloc(&atrib_d, sizeof(atributo) * quant_atrib);
+	if (atrib_h == NULL || atrib_d == NULL){
 		printf("\nErro de alcocacao!");
 		system("pause");
-		exit(1);
 	}
+	processaAtributos(atrib_h, quant_atrib, input);	//preenche vetor de atributos da classe;
+	imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
+	cudaMemcpy(atrib_d, atrib_h, sizeof(atributo) * quant_atrib, cudaMemcpyHostToDevice);
 
+	//carrega exemplos
 	int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
-	exemplo* exemplos = (exemplo*)calloc(quant_exemp, sizeof(exemplo));														// ponteiro para alocação dinâmica do vetor com exemplos;
-	if (exemplos == NULL){
-
+	exemplo *exemplos_h, *exemplos_d;																							// ponteiros para alocação dinâmica do vetor com exemplos;
+	cudaMallocHost((void**)&exemplos_h, sizeof(exemplo) * quant_exemp);
+	cudaMalloc(&exemplos_d, sizeof(exemplo) * quant_exemp);
+	if (exemplos_h == NULL || exemplos_d == NULL){
 		printf("\nErro de alcocacao!");
 		system("pause");
-		exit(1);
+	}
+	processaExemplos(atrib_h, quant_atrib, exemplos_h, input);
+	cudaMemcpy(exemplos_d, exemplos_h, sizeof(exemplo) * quant_exemp, cudaMemcpyHostToDevice);
+
+	//carrega enxames iniciais
+	particula *enxames_h, *enxames_d;																								//ponteiros para alocação dinâmica do vetor com as partículas dos enxames
+	int quant_total_particulas = h_param.quant_particulas * h_param.quant_enxames;
+	cudaMallocHost((void**)&enxames_h, sizeof(particula) * quant_total_particulas);
+	cudaMalloc(&enxames_d, sizeof(particula) * quant_total_particulas);
+	if (enxames_h == NULL || enxames_d == NULL){
+		printf("\nErro de alcocacao!");
+		system("pause");
 	}
 
-	//INICIA MÓDULOS
+	for (int i = 0; i < h_param.quant_enxames; i++){	//cria enxames individualmente e atribui a variável que apontará para todos os enxames
+		particula *enxame_h = criaEnxame(h_param, atrib_h, quant_atrib);
+		for (int j = 0; j < h_param.quant_particulas; j++)
+			enxames_h[i * h_param.quant_particulas + j] = enxame_h[j];
+	}
 
+	for (int i = 0; i < quant_total_particulas; i++)
+		enxames_h[i].velocidade = carregaVelocidadeParticulaDevice(enxames_h[i], atrib_h, quant_atrib);	//partículas dos enxames passam a apontar para velocidades alocadas no device
+
+	cudaMemcpy(enxames_d, enxames_h, sizeof(particula) * quant_total_particulas, cudaMemcpyHostToDevice);
+
+	//configura vetores que receberão as posições finais das partículas após a execução do kernel
+	regra *posicoes_h, *posicoes_d;
+	cudaMallocHost((void**)&posicoes_h, sizeof(regra) * quant_total_particulas);
+	cudaMalloc(&posicoes_d, sizeof(regra) * quant_total_particulas);
+	cudaMemcpy(posicoes_d, posicoes_h, sizeof(regra) * quant_total_particulas, cudaMemcpyHostToDevice);
+
+	//CONFIGURA ALEATORIEDADE
+
+	//configura aleatoriedade no host
 	srand((unsigned)time(NULL));
-	imprimeParametros(param);
-	processaAtributos(atrib, quant_atrib, input);																				//preenche vetor de atributos da classe;
-	imprimeAtributos(atrib, quant_atrib);																						//imprime todas as informações contidas no vetor de atributos;
-	processaExemplos(atrib, quant_atrib, exemplos, input);
 
-	//imprimeExemplosInt(exemplos, quant_exemp);
-	//regra r = geraRegra(param, atrib, quant_atrib, param.classe);
-	//imprimeRegra(r, quant_atrib);
-	//preencheMatrizCont(&r, exemplos, quant_exemp, quant_atrib);
-	//imprimeMatrizCont(r);
-	//calculaFuncoesObj(&r, quant_atrib, atrib, quant_exemp);
-	//imprimeFuncoesObj(r);
+	//configura aleatoriedade no device
+	curandState* devStates;
+	cudaMalloc(&devStates, quant_total_particulas * sizeof(curandState));
+	setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
 
-	//buscaLocal(param, atrib, quant_atrib, exemplos, quant_exemp);
-	//regra* regras = geraRegras(param, param.quant_regras_pareto, atrib, quant_atrib, param.classe, exemplos, quant_exemp);
-	//regiao_pareto pareto = dominanciaDePareto(param, regras, param.quant_regras_pareto);
-	//imprimeDominioPareto(pareto, quant_atrib);
+	//INICIA PSO
 
-	int i;
-	for (i = 0; i < param.execucoes; i++){
-		FILE* arq_solucao = criaArquivo(i);
-		regiao_pareto solucao = SPSO(param, exemplos, quant_exemp, atrib, quant_atrib, arq_solucao);
-	}
+	//criaEnxames<<<param.quant_enxames, param.quant_particulas>>>(param, exemplos_d, quant_exemp, atrib_d, quant_atrib, enxame_d, devStates);
+	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas >> >(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d,	devStates);
+	
+	//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
 
-	//imprimeSolucao(solucao, atrib, quant_atrib);
-	//criaArquivosObjSolucao(solucao, param);
+	cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
+	posicoes_h = apagaRegrasIguais(posicoes_h, &quant_total_particulas, quant_atrib);
+	regiao_pareto pareto = dominanciaDePareto(h_param, posicoes_h, quant_total_particulas);
+	insereSolucoesEmArquivo(pareto, h_param, output);
+	insereNomesSolucoesArquivo(pareto, h_param, output, atrib_h, quant_atrib);
+	imprimeDominioPareto(pareto, quant_atrib);
 
 	fclose(arq_parametros);
 	fclose(input);
+	fclose(output);
+
+	cudaFree(atrib_h);
+	cudaFree(exemplos_h);
+	cudaFree(enxames_h);
+
+	cudaFree(atrib_d);
+	cudaFree(exemplos_d);
+	cudaFree(enxames_d);
+	cudaFree(devStates);
 
 	system("pause");
 
