@@ -1909,7 +1909,7 @@ __device__ double** device_inicializaVelocidadeParticula(atributo* atrib, int qu
 
 	double** vel = (double**)malloc(quant_atrib * sizeof(double*));
 	if (vel == NULL){
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_inicializaVelocidadeParticula'");
 	}
 
 	int i, j;
@@ -1917,7 +1917,7 @@ __device__ double** device_inicializaVelocidadeParticula(atributo* atrib, int qu
 
 		vel[i] = (double*)malloc((atrib[i].quant_real + 1) * sizeof(double));
 		if (vel[i] == NULL){
-			printf("\nErro de alcocacao!");
+			printf("\nErro de alcocacao! 'device_inicializaVelocidadeParticula'");
 		}
 		for (j = 0; j < atrib[i].quant_real + 1; j++){
 
@@ -1986,7 +1986,7 @@ __device__ regra* device_geraRegras(parametros param, int quant_regras, atributo
 	int i;
 	regra* regras = (regra*)malloc(quant_regras * sizeof(regra));
 	if (regras == NULL){
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_geraRegras'");
 	}
 
 	for (i = 0; i < quant_regras; i++){
@@ -2009,7 +2009,7 @@ __device__ regra* device_uneRegras(regra* regras1, int quant_regras1, regra* reg
 	regra* regras = (regra*)malloc((quant_regras1 + quant_regras2) * sizeof(regra));
 	if (regras == NULL){
 
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_uneRegras'");
 	}
 
 	int i;
@@ -2066,7 +2066,7 @@ __device__ regra* device_apagaRegrasIguais(regra* r, int* quant_regras, int quan
 	regra* regras = (regra*)malloc(cont * sizeof(regra));
 	if (regras == NULL){
 
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_apagaRegrasIguais'");
 	}
 
 	cont = 0;
@@ -2133,7 +2133,7 @@ __device__ void device_apagaSolucoesNulasPareto(regiao_pareto* pareto){
 	regra* solucoes = (regra*)malloc(quant_sol_nao_nulas * sizeof(regra));
 	if (solucoes == NULL){
 
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_apagaSolucoesNulasPareto'");
 	}
 
 	int cont = 0;
@@ -2183,7 +2183,7 @@ __device__ regra* device_enxameParaRegras(parametros param, particula* enxame){
 	regra* regras = (regra*)malloc(param.quant_particulas * sizeof(regra));
 	if (regras == NULL){
 
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_enxameParaRegras'");
 	}
 
 	int i;
@@ -2339,7 +2339,7 @@ __device__ regiao_pareto device_inicializaPareto(parametros param){
 	pareto.solucoes = (regra*)malloc(1 * sizeof(regra));
 	if (pareto.solucoes == NULL){
 
-		printf("\nErro de alcocacao!");
+		printf("\nErro de alcocacao! 'device_enxameParaRegras'");
 	}
 
 	pareto.solucoes[0].nula = 1;
@@ -2625,20 +2625,21 @@ __global__ void criaEnxames(parametros param, exemplo* exemplos, int quant_exemp
 	enxame[i] = device_criaParticula(param, atrib, quant_atrib, &globalState[i]);
 }
 
-__global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, FILE* output, particula* enxame, regra* posicoesFinais, curandState* globalState){
+__global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, FILE* output, particula* enxames, regra* posicoesFinais, curandState* globalState){
 
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 	if (id > (*param).quant_particulas * (*param).quant_enxames)
 		return;
 
-	//extern __shared__ int mem[];	//memória compartilhada que armazenará as variáveis de todas as arrays dinâmicas utilizadas
+	extern __shared__ int mem[];	//memória compartilhada que armazenará as variáveis de todas as arrays dinâmicas utilizadas
+	particula *enxame_shared = (particula*)&mem[0];	//lista de particulas correspondente ao enxame de cada bloco
 
-	//CARREGA PARTÍCULA E CALCULA FUNÇÕES OBJETIVO
+	//CARREGA PARTÍCULA, CALCULA FUNÇÕES OBJETIVO E PREENCHE ENXAME DO RESPECTIVO BLOCO
 
-	particula p = enxame[id];
+	particula p = enxames[id];
 	device_preencheMatrizCont(&(p.posicao), exemplos, quant_exemp, quant_atrib);
 	device_calculaFuncoesObj(&(p.posicao), quant_atrib, atrib, quant_exemp);
-	enxame[id] = p;
+	enxame_shared[threadIdx.x] = p;
 
 	__syncthreads();
 
@@ -2649,7 +2650,7 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 
 	if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
 	{
-		regras_enxame = device_enxameParaRegras((*param), enxame);
+		regras_enxame = device_enxameParaRegras((*param), enxame_shared);
 		pareto = device_inicializaPareto((*param));
 
 		if ((*param).metodo_dopagem_solucao == 0)	// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
@@ -2658,7 +2659,7 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 			device_insereDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
 		else
 			device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
-		device_setGBest((*param), pareto, enxame, globalState);
+		device_setGBest((*param), pareto, enxame_shared, globalState);
 	}
 
 	__syncthreads();
@@ -2671,19 +2672,19 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 	for (i = 0; i < (*param).bl_interacoes; i++){
 		if ((*param).classe == -1){
 
-			device_setVelocidadeParticula(&enxame[id], atrib, quant_atrib, (*param), globalState);
-			device_setPosicaoParticula(&enxame[id], atrib, quant_atrib, globalState);
+			device_setVelocidadeParticula(&enxame_shared[threadIdx.x], atrib, quant_atrib, (*param), globalState);
+			device_setPosicaoParticula(&enxame_shared[threadIdx.x], atrib, quant_atrib, globalState);
 		}
 		else{
-			device_setVelocidadeParticula(&enxame[id], atrib, quant_atrib - 1, (*param), globalState);
-			device_setPosicaoParticula(&enxame[id], atrib, quant_atrib - 1, globalState);
+			device_setVelocidadeParticula(&enxame_shared[threadIdx.x], atrib, quant_atrib - 1, (*param), globalState);
+			device_setPosicaoParticula(&enxame_shared[threadIdx.x], atrib, quant_atrib - 1, globalState);
 		}
 
-		device_preencheMatrizCont(&(enxame[id].posicao), exemplos, quant_exemp, quant_atrib);
-		device_calculaFuncoesObj(&(enxame[id].posicao), quant_atrib, atrib, quant_exemp);
+		device_preencheMatrizCont(&(enxame_shared[threadIdx.x].posicao), exemplos, quant_exemp, quant_atrib);
+		device_calculaFuncoesObj(&(enxame_shared[threadIdx.x].posicao), quant_atrib, atrib, quant_exemp);
 
-		if (device_dominaPorPareto(enxame[id].posicao, enxame[id].lBest, pareto) == -1)
-			enxame[id].lBest = enxame[id].posicao;
+		if (device_dominaPorPareto(enxame_shared[threadIdx.x].posicao, enxame_shared[threadIdx.x].lBest, pareto) == -1)
+			enxame_shared[threadIdx.x].lBest = enxame_shared[threadIdx.x].posicao;
 
 		__syncthreads();
 
@@ -2691,7 +2692,7 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 
 		if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
 		{
-			regras_enxame = device_enxameParaRegras((*param), enxame);
+			regras_enxame = device_enxameParaRegras((*param), enxame_shared);
 			total = device_uneRegras(regras_enxame, (*param).quant_particulas, pareto.solucoes, pareto.quant_sol_pareto);
 			quant_regras = (*param).quant_particulas + pareto.quant_sol_pareto;
 			total = device_apagaRegrasIguais(total, &quant_regras, quant_atrib);
@@ -2704,7 +2705,7 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 			else
 				device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), total, quant_regras, &pareto);
 
-			device_setGBest((*param), pareto, enxame, globalState);
+			device_setGBest((*param), pareto, enxame_shared, globalState);
 			//insereObjEmArquivo(pareto, enxame, param, output, i + 1);
 		}
 
@@ -2714,16 +2715,12 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 	if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
 	{
 		device_removeDominadas(&pareto);
-		//insereSolucoesEmArquivo(pareto, param, output);
-		//insereNomesSolucoesArquivo(pareto, param, output, atrib, quant_atrib);
-		//imprimeDominioPareto(pareto, quant_atrib);
 	}
-	//fclose(output);
 
 	__syncthreads();
 
 	//INSERE POSIÇÃO FINAL DE CADA PARTÍCULA NO VETOR DE POSIÇÕES FINAIS
-	posicoesFinais[id] = enxame[id].posicao;
+	posicoesFinais[id] = enxame_shared[threadIdx.x].posicao;
 }
 
 //FIM DE FUNÇÕES PARALELAS//
@@ -2791,7 +2788,7 @@ int main(){
 	//AUMENTA LIMITES DE MEMÓRIA
 
 	size_t size_heap, size_stack;
-	//cudaDeviceSetLimit(cudaLimitMallocHeapSize, 20000000 * sizeof(double));
+	cudaDeviceSetLimit(cudaLimitMallocHeapSize, 200000000 * sizeof(double));
 	cudaDeviceSetLimit(cudaLimitStackSize, 10 * 2048);
 	cudaDeviceGetLimit(&size_heap, cudaLimitMallocHeapSize);
 	cudaDeviceGetLimit(&size_stack, cudaLimitStackSize);
@@ -2883,9 +2880,12 @@ int main(){
 	setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
 
 	//INICIA PSO
-
+	
+	printf("Inicio de processamento no kernel\n");
 	//criaEnxames<<<param.quant_enxames, param.quant_particulas>>>(param, exemplos_d, quant_exemp, atrib_d, quant_atrib, enxame_d, devStates);
-	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas >> >(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d,	devStates);
+	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
+		(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d,	devStates);
+	printf("Fim de processamento no kernel\n");
 	
 	//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
 
