@@ -57,6 +57,7 @@ struct exemplo{
 
 	int campos[quant_val];																										// vetor de atributos do exemplo;
 	int quant_real;																												// quantidade real de atributos do exemplo;
+	int valido;																													//marca se exemplo é válido (= 1) ou não (= 0)
 };
 typedef struct exemplo exemplo;
 
@@ -325,6 +326,7 @@ exemplo inicializaExemplo(int quant_atrib){
 
 	exemplo exemp;
 	exemp.quant_real = quant_atrib;
+	exemp.valido = 1;
 	return exemp;
 }
 
@@ -1055,7 +1057,7 @@ double** carregaVelocidadeParticulaDevice(particula p, atributo* atrib, int quan
 	}
 
 	//aloca vetor vel_d no device e copia de vel as referências aos ponteiros alocados no device
-	double** vel_d; 
+	double** vel_d;
 	cudaMalloc(&vel_d, quant_atrib * sizeof(double));
 	cudaMemcpy(vel_d, vel, quant_atrib * sizeof(double), cudaMemcpyHostToDevice);
 
@@ -1829,42 +1831,43 @@ __device__ void device_preencheMatrizCont(regra* r, exemplo* exemplos, int quant
 	int i, j, b, h;
 
 	for (i = 0; i < quant_exemp; i++){
+		if ((*(exemplos + i)).valido == 1){	//somente se o exemplo for válido
+			b = 1;
+			h = 1;
 
-		b = 1;
-		h = 1;
+			for (j = 0; j < quant_atrib - 1; j++){
 
-		for (j = 0; j < quant_atrib - 1; j++){
-
-			if (((*(exemplos + i)).campos[j] != (*r).valores[j]) && ((*r).valores[j] != -1)){
-				b = 0;
+				if (((*(exemplos + i)).campos[j] != (*r).valores[j]) && ((*r).valores[j] != -1)){
+					b = 0;
+				}
 			}
+
+			if ((*(exemplos + i)).campos[quant_atrib - 1] != (*r).valores[quant_atrib - 1]){
+				h = 0;
+			}
+
+			if (b == 1)
+				(*r).mat_cont[B]++;
+			else
+				(*r).mat_cont[_B]++;
+
+			if (h == 1)
+				(*r).mat_cont[H]++;
+			else
+				(*r).mat_cont[_H]++;
+
+			if (b == 1 && h == 1)
+				(*r).mat_cont[BH]++;
+
+			else if (b == 1 && h == 0)
+				(*r).mat_cont[B_H]++;
+
+			else if (b == 0 && h == 1)
+				(*r).mat_cont[_BH]++;
+
+			else if (b == 0 && h == 0)
+				(*r).mat_cont[_B_H]++;
 		}
-
-		if ((*(exemplos + i)).campos[quant_atrib - 1] != (*r).valores[quant_atrib - 1]){
-			h = 0;
-		}
-
-		if (b == 1)
-			(*r).mat_cont[B]++;
-		else
-			(*r).mat_cont[_B]++;
-
-		if (h == 1)
-			(*r).mat_cont[H]++;
-		else
-			(*r).mat_cont[_H]++;
-
-		if (b == 1 && h == 1)
-			(*r).mat_cont[BH]++;
-
-		else if (b == 1 && h == 0)
-			(*r).mat_cont[B_H]++;
-
-		else if (b == 0 && h == 1)
-			(*r).mat_cont[_BH]++;
-
-		else if (b == 0 && h == 0)
-			(*r).mat_cont[_B_H]++;
 	}
 }
 
@@ -2355,39 +2358,14 @@ __device__ regiao_pareto device_inicializaPareto(parametros param){
 
 __device__ void device_inserePareto(regiao_pareto* pareto, regra r){
 
-	int i, inserido = 0;
-
-	for (i = 0; i < (*pareto).quant_sol_pareto; i++){
+	for (int i = 0; i < (*pareto).quant_sol_pareto; i++){
 
 		if ((*pareto).solucoes[i].nula == 1){
 
 			(*pareto).solucoes[i] = r;
 			(*pareto).solucoes[i].nula = 0;
-			inserido = 1;
 			break;
 		}
-	}
-
-	if (inserido == 0){
-
-		//cria cópia da array de regras
-		int quantidade_antiga = (*pareto).quant_sol_pareto;
-		regra* copia_solucoes = (regra*)malloc(quantidade_antiga*sizeof(regra));
-		for (i = 0; i < quantidade_antiga; i++){
-			copia_solucoes[i] = (*pareto).solucoes[i];
-		}
-
-		//realoca array de regras com 1 unidade de memória a mais e carrega valores da cópia
-		free((*pareto).solucoes);
-		(*pareto).solucoes = (regra*)malloc((quantidade_antiga + 1)*sizeof(regra));
-		for (i = 0; i < quantidade_antiga; i++){
-			(*pareto).solucoes[i] = copia_solucoes[i];
-		}
-
-		//insere nova regra na nova posição alocada
-		(*pareto).quant_sol_pareto++;
-		(*pareto).solucoes[quantidade_antiga] = r;
-		(*pareto).solucoes[quantidade_antiga].nula = 0;
 	}
 }
 
@@ -2485,10 +2463,10 @@ __device__ void device_atualizaCrowdingDistance(regiao_pareto pareto, int objeti
 	case ACCLP:
 		break;
 	case SENS:
-		device_qsort(regras, quant_regras, sizeof(regra), comparaSENS);
+		//device_qsort(regras, quant_regras, sizeof(regra), comparaSENS);
 		break;
 	case SPEC:
-		device_qsort(regras, quant_regras, sizeof(regra), comparaSPEC);
+		//device_qsort(regras, quant_regras, sizeof(regra), comparaSPEC);
 		break;
 	case COV:
 		break;
@@ -2549,7 +2527,7 @@ __device__ void device_insereDominadasPorOrdemDeDominadores(parametros param, re
 
 	device_atualizaDominadores(regras, quant_regras, *pareto);
 	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
-	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+	//device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
 
 	int cont = 0, i = 0;
 	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
@@ -2563,7 +2541,7 @@ __device__ void device_insereDominadasPorOrdemDeDominadores(parametros param, re
 		i++;
 	}
 
-	device_ordenaRegrasMenosDominadas(regras, quant_regras);
+	//device_ordenaRegrasMenosDominadas(regras, quant_regras);
 
 	i = 0;
 	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
@@ -2579,7 +2557,7 @@ __device__ void device_insereDominadasPorOrdemDeCrowdDistance(parametros param, 
 
 	device_atualizaDominadores(regras, quant_regras, *pareto);
 	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
-	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+	//device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
 
 	int i = 0;
 	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
@@ -2605,7 +2583,7 @@ __device__ void device_insereNaoDominadasPorOrdemDeCrowdDistance(parametros para
 
 	device_atualizaDominadores(regras, quant_regras, *pareto);
 	device_atualizaCrowdingDistances(*pareto, regras, quant_regras);
-	device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
+	//device_ordenaRegrasMenoresCrowdDistances(regras, quant_regras);
 
 	int i = 0;
 	while ((*pareto).quant_sol_pareto < param.tamanho_arquivo && i < quant_regras){
@@ -2625,7 +2603,8 @@ __global__ void criaEnxames(parametros param, exemplo* exemplos, int quant_exemp
 	enxame[i] = device_criaParticula(param, atrib, quant_atrib, &globalState[i]);
 }
 
-__global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_exemp, atributo* atrib, int quant_atrib, FILE* output, particula* enxames, regra* posicoesFinais, curandState* globalState){
+__global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_exemp, int quant_exemp_por_enxame, atributo* atrib, int quant_atrib,
+	FILE* output, particula* enxames, regra* posicoesFinais, curandState* globalState){
 
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 	if (id > (*param).quant_particulas * (*param).quant_enxames)
@@ -2633,33 +2612,83 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 
 	extern __shared__ int mem[];	//memória compartilhada que armazenará as variáveis de todas as arrays dinâmicas utilizadas
 	particula *enxame_shared = (particula*)&mem[0];	//lista de particulas correspondente ao enxame de cada bloco
+	exemplo *exemplos_shared = (exemplo*)&enxame_shared[(*param).quant_particulas];	//lista de exemplos restritos para cada bloco
+	regra *regras_enxame_shared = (regra*)&exemplos_shared[quant_exemp_por_enxame];	//lista de regras referentes às posições das partículas de um enxame (bloco)
+	regra *solucoes_pareto_shared = (regra*)&regras_enxame_shared[(*param).quant_particulas];	//lista de soluções do domínio de pareto dum único enxame (bloco)
+
+	//CARREGA EXEMPLOS DE CADA BLOCO EM SUAS RESPECTIVAS MEMÓRIAS COMPARTILHADAS
+
+	if (threadIdx.x < quant_exemp_por_enxame){
+		exemplo exemplo_invalido;	//exemplo usado para preencher espaços vazios no shared preferences de exemplos
+		exemplo_invalido.valido = 0;	//ao sinalizar que é inválido, tal exemplo será desprezado ao longo da execução do algoritmo
+
+		int indice_exemplo_global = quant_exemp_por_enxame * blockIdx.x + threadIdx.x;	//índice da array de exemplos total que será mapeado para a memória shared
+		exemplos_shared[threadIdx.x] = indice_exemplo_global < quant_exemp ? exemplos[indice_exemplo_global] : exemplo_invalido;
+	}
+
+	__syncthreads();
 
 	//CARREGA PARTÍCULA, CALCULA FUNÇÕES OBJETIVO E PREENCHE ENXAME DO RESPECTIVO BLOCO
 
 	particula p = enxames[id];
-	device_preencheMatrizCont(&(p.posicao), exemplos, quant_exemp, quant_atrib);
-	device_calculaFuncoesObj(&(p.posicao), quant_atrib, atrib, quant_exemp);
+	device_preencheMatrizCont(&(p.posicao), exemplos_shared, quant_exemp_por_enxame, quant_atrib);
+	device_calculaFuncoesObj(&(p.posicao), quant_atrib, atrib, quant_exemp_por_enxame);
 	enxame_shared[threadIdx.x] = p;
+
+	__syncthreads();
+
+	//CARREGA LISTA DE REGRAS A PARTIR DA POSIÇÃO ATUAL DE CADA PARTÍCULA
+
+	regras_enxame_shared[threadIdx.x] = enxame_shared[threadIdx.x].posicao;
 
 	__syncthreads();
 
 	//CALCULA MELHORES PARTÍCULAS DO ENXAME
 
-	regra* regras_enxame;
+	//regra* regras_enxame;
 	regiao_pareto pareto;
 
 	if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
 	{
-		regras_enxame = device_enxameParaRegras((*param), enxame_shared);
-		pareto = device_inicializaPareto((*param));
+		//regras_enxame = device_enxameParaRegras((*param), enxame_shared);
+		
+		//INICIALIZA DOMÍNIO DE PARETO
+
+		pareto.solucoes = solucoes_pareto_shared;
+		pareto.quant_sol_pareto = (*param).quant_regras_pareto;
+		for (int i = 0; i < pareto.quant_sol_pareto; i++){
+			pareto.solucoes[i].nula = 1;
+		}
+
+		for (int i = 0; i < quant_func_ob; i++){
+			pareto.func_obj[i] = ((*param).funcoes_obj_pareto[i]) - 48;
+		}
+
+		//INSERE MELHORES PARTÍCULAS INICIAIS NO DOMÍNIO DE PARETO
 
 		if ((*param).metodo_dopagem_solucao == 0)	// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
-			device_insereDominadasPorOrdemDeDominadores((*param), regras_enxame, (*param).quant_particulas, &pareto);
+			device_insereDominadasPorOrdemDeDominadores((*param), regras_enxame_shared, (*param).quant_particulas, &pareto);
 		else if ((*param).metodo_dopagem_solucao == 1)
-			device_insereDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
+			device_insereDominadasPorOrdemDeCrowdDistance((*param), regras_enxame_shared, (*param).quant_particulas, &pareto);
 		else
-			device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), regras_enxame, (*param).quant_particulas, &pareto);
-		device_setGBest((*param), pareto, enxame_shared, globalState);
+			device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), regras_enxame_shared, (*param).quant_particulas, &pareto);
+		//device_setGBest((*param), pareto, enxame_shared, globalState);
+
+		//ATUALIZA A MELHORAR SOLUÇÃO GLOBAL DA PARTÍCULA DA THREAD ATUAL
+
+		for (int i = 0; i < (*param).quant_particulas; i++){
+			regra r1, r2;
+
+			do{
+				r1 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+				r2 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+			} while (r1.nula == 1 && r2.nula == 1);
+
+			if (r1.crowding_distance > r2.crowding_distance || r1.nula == 0)
+				enxame_shared[threadIdx.x].gBest = r1;
+			else if (r2.nula == 0)
+				enxame_shared[threadIdx.x].gBest = r2;
+		}
 	}
 
 	__syncthreads();
@@ -2680,11 +2709,15 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 			device_setPosicaoParticula(&enxame_shared[threadIdx.x], atrib, quant_atrib - 1, globalState);
 		}
 
-		device_preencheMatrizCont(&(enxame_shared[threadIdx.x].posicao), exemplos, quant_exemp, quant_atrib);
-		device_calculaFuncoesObj(&(enxame_shared[threadIdx.x].posicao), quant_atrib, atrib, quant_exemp);
+		device_preencheMatrizCont(&(enxame_shared[threadIdx.x].posicao), exemplos_shared, quant_exemp_por_enxame, quant_atrib);
+		device_calculaFuncoesObj(&(enxame_shared[threadIdx.x].posicao), quant_atrib, atrib, quant_exemp_por_enxame);
 
 		if (device_dominaPorPareto(enxame_shared[threadIdx.x].posicao, enxame_shared[threadIdx.x].lBest, pareto) == -1)
 			enxame_shared[threadIdx.x].lBest = enxame_shared[threadIdx.x].posicao;
+
+		//ATUALIZA LISTA DE REGRAS A PARTIR DA POSIÇÃO ATUAL DE CADA PARTÍCULA	(não precisa sincronizar com as demais!)
+
+		regras_enxame_shared[threadIdx.x] = enxame_shared[threadIdx.x].posicao;
 
 		__syncthreads();
 
@@ -2692,11 +2725,17 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 
 		if (threadIdx.x == 0)	//caso seja a primeira thread do bloco (a primeira partícula do enxame)
 		{
-			regras_enxame = device_enxameParaRegras((*param), enxame_shared);
-			total = device_uneRegras(regras_enxame, (*param).quant_particulas, pareto.solucoes, pareto.quant_sol_pareto);
+			//regras_enxame = device_enxameParaRegras((*param), enxame_shared);
+			total = device_uneRegras(regras_enxame_shared, (*param).quant_particulas, pareto.solucoes, pareto.quant_sol_pareto);
 			quant_regras = (*param).quant_particulas + pareto.quant_sol_pareto;
 			total = device_apagaRegrasIguais(total, &quant_regras, quant_atrib);
-			pareto = device_inicializaPareto((*param));
+			
+			//REINICIALIZA SOLUÇÕES DO DOMÍNIO DE PARETO
+
+			pareto.quant_sol_pareto = (*param).quant_regras_pareto;
+			for (int i = 0; i < pareto.quant_sol_pareto; i++){
+				pareto.solucoes[i].nula = 1;
+			}
 
 			if ((*param).metodo_dopagem_solucao == 0)																		// ----->> insere dominadas na solução (insereDominadasPorOrdemDeCrowdDistance ou insereDominadasPorOrdemDeDominadores())
 				device_insereDominadasPorOrdemDeDominadores((*param), total, quant_regras, &pareto);
@@ -2705,8 +2744,24 @@ __global__ void SPSOMultiEnxame(parametros* param, exemplo* exemplos, int quant_
 			else
 				device_insereNaoDominadasPorOrdemDeCrowdDistance((*param), total, quant_regras, &pareto);
 
-			device_setGBest((*param), pareto, enxame_shared, globalState);
+			//device_setGBest((*param), pareto, enxame_shared, globalState);
 			//insereObjEmArquivo(pareto, enxame, param, output, i + 1);
+
+			//ATUALIZA A MELHORAR SOLUÇÃO GLOBAL DA PARTÍCULA DA THREAD ATUAL
+
+			for (int i = 0; i < (*param).quant_particulas; i++){
+				regra r1, r2;
+
+				do{
+					r1 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+					r2 = pareto.solucoes[device_getRandom(globalState) % pareto.quant_sol_pareto];
+				} while (r1.nula == 1 && r2.nula == 1);
+
+				if (r1.crowding_distance > r2.crowding_distance || r1.nula == 0)
+					enxame_shared[threadIdx.x].gBest = r1;
+				else if (r2.nula == 0)
+					enxame_shared[threadIdx.x].gBest = r2;
+			}
 		}
 
 		__syncthreads();
@@ -2788,8 +2843,8 @@ int main(){
 	//AUMENTA LIMITES DE MEMÓRIA
 
 	size_t size_heap, size_stack;
-	cudaDeviceSetLimit(cudaLimitMallocHeapSize, 200000000 * sizeof(double));
-	cudaDeviceSetLimit(cudaLimitStackSize, 10 * 2048);
+	cudaDeviceSetLimit(cudaLimitMallocHeapSize, 350000000 * sizeof(double));
+	cudaDeviceSetLimit(cudaLimitStackSize, 20 * 2048);
 	cudaDeviceGetLimit(&size_heap, cudaLimitMallocHeapSize);
 	cudaDeviceGetLimit(&size_stack, cudaLimitStackSize);
 	printf("Heap size found to be %d; Stack size found to be %d\n", (int)size_heap, (int)size_stack);
@@ -2880,13 +2935,41 @@ int main(){
 	setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
 
 	//INICIA PSO
-	
-	printf("Inicio de processamento no kernel\n");
+
 	//criaEnxames<<<param.quant_enxames, param.quant_particulas>>>(param, exemplos_d, quant_exemp, atrib_d, quant_atrib, enxame_d, devStates);
-	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
-		(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d,	devStates);
+
+	//calcula quantidade de exemplos que serão destinados a cada enxame
+	int quant_exemp_por_enxame = quant_exemp / h_param.quant_enxames;
+	if (quant_exemp % h_param.quant_enxames != 0)
+		quant_exemp_por_enxame++;
+
+	int enxameSharedSize = h_param.quant_particulas * sizeof(particula);	//memória para lista de partículas do enxame de um bloco
+	int exemplosSharedSize = quant_exemp_por_enxame * sizeof(exemplo);	//lista de exemplos exclusivos de um bloco
+	int regrasEnxameSharedSize = h_param.quant_particulas * sizeof(regra);	//lista de regras obtidas das partículas do enxame de um bloco
+	int solucoesParetoSharedSize = h_param.quant_regras_pareto * sizeof(regra);	//soluções no domínio de pareto de um único enxame
+	int sharedMemorySize = enxameSharedSize + exemplosSharedSize + regrasEnxameSharedSize + solucoesParetoSharedSize;
+
+	printf("\nEnxame size: %d\n", enxameSharedSize);
+	printf("Exemplos size: %d\n", exemplosSharedSize);
+	printf("Regras size: %d\n", regrasEnxameSharedSize);
+	printf("Solucoes Pareto size: %d\n", solucoesParetoSharedSize);
+	printf("Shared size: %d\n\n", sharedMemorySize);
+
+	printf("Inicio de processamento no kernel\n");
+
+	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, sharedMemorySize >> >
+		(d_param, exemplos_d, quant_exemp, quant_exemp_por_enxame, atrib_d, quant_atrib, output, enxames_d, posicoes_d, devStates);
+	
 	printf("Fim de processamento no kernel\n");
 	
+	//apresenta possível erro de execução do kernel
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess)
+	{
+		fprintf(stderr, "Cuda error: %s.\n", cudaGetErrorString(err));
+		system("pause");
+	}
+
 	//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
 
 	cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
