@@ -15,6 +15,7 @@
 #define quant_max_atrib 100																											// quantidade máxima de atributos do arquivo;
 #define quant_mat_cont 8																											// quantidade de posições no vetor da matriz de contigência;
 #define quant_func_ob 8																												// quantidade de posições no vetor das funções objetivo;
+#define quant_mat_conf 4																											// quantidade de posições no vetor da matriz de confusão;
 
 /* posições da matriz de contingência */
 #define BH 0																														// B verdade e H verdade;
@@ -36,6 +37,12 @@
 #define COV 6																														// suporte;
 #define SUP 7
 
+/* posições da matriz de confusão */
+#define TP 0																														// positivo verdadeiro
+#define FP 1																														// falso positivo
+#define TN 2																														// negativo verdadeiro
+#define FN 3																														// falso negativo
+
 __device__ const double MAX_PHI = 1;
 __device__ const double MAX_OMEGA = 0.8;
 __device__ const int INFINITO = 1000000;
@@ -46,8 +53,8 @@ const int MENOS_INFINITO = -1000000;
 struct atributo{
 
 	char* nome;																													// nome do atributo
-	int cod[quant_val];																										// código numérico dos valores do atributo;
-	char valor[quant_val][tam_val];																							// valores do atributo;
+	int cod[quant_val];																											// código numérico dos valores do atributo;
+	char valor[quant_val][tam_val];																								// valores do atributo;
 	int quant_real;																												// quantidade real de valores que um atributo assume;
 	int numerico;																												// se atributo for numérico a flag será 1;
 };
@@ -71,9 +78,18 @@ struct regra{
 };
 typedef struct regra regra;
 
+struct classificador{
+
+	regra* regras;																												// regras que compõem o classificador;
+	int quant_regras;																											// quantidade de regras que compõem o classificador;
+	int mat_conf[quant_mat_conf];																								// matriz de confusão do classificador;
+};
+typedef struct classificador classificador;
+
 struct parametros{
 
 	char* arquivo;																												// diretório do arquivo de treino .arff;
+	char* arquivo_teste;																										// diretório do arquivo de teste .arff;
 	int execucoes;																												// número de execuções do algoritmo;
 	int classe;																													// define se regras geradas serão para classe positiva (1), negativa (0) ou ambas (-1);	
 	int funcao_obj;																												// função objetivo a ser usada na B.L;	
@@ -123,6 +139,78 @@ FILE* carregarArq(char argv[]){
 		exit(1);																												// e finaliza
 	}
 	return input;
+}
+
+/* Função para carrear os arquivos .arff de exemplos particionados.
+Considera-se que existam 10 partições, sendo o parâmetro número referente
+à partição que não será utilizada para o treinamento (apenas para o teste). */
+FILE* carregarArqDados(char nomeBase[], int numero){
+
+	//Cria arquivo que receberá o conjunto dos exemplos de todas as partições consideradas
+	//para o treinamento. Além disso, copia o cabeçalho do arquivo da 1ª partição, de modo
+	//que o arquivo final possa ter seus atributos processados. 
+	FILE* dados = fopen("conjunto_particoes_dados.txt", "w");
+	
+	//Constroi nome completo do diretório da partição 0.
+	char nomeArquivo[20];
+	sprintf(nomeArquivo, "%s/it%d/%s_data.arff", nomeBase, 0, nomeBase);
+	FILE* input = fopen(nomeArquivo, "r");
+	
+	//Informa possível falha na abertura da partição. 
+	if (input == NULL){																											
+		printf("Arquivo não encontrado!\n");																					
+		printf("\n%s", nomeArquivo);
+		printf("\nlenght = %d", strlen(nomeArquivo));
+		system("pause");
+		exit(1);																												
+	}
+	
+	//Copia cada linha do arquivo da partição 0, até que todo o cabeçalho tenha sido copiado. 
+	char linhaCopiada;
+	while ((linhaCopiada = fgetc(input)) != EOF && strstr(linhaCopiada, "@data") == NULL){
+			fputc(linhaCopiada, dados);
+	}
+	
+	//Fecha arquivo da partição copiada.
+	fclose(input);
+	
+	//Percorre a pasta de cada partição e a copia para o arquivo final.
+	const int maximoParticoes = 10;
+	for(int i = 0; i < maximoParticoes; i++){
+		if(i != numero){
+			
+			//Constroi nome completo do diretório da partição atualmente consultada.
+			sprintf(nomeArquivo, "%s/it%d/%s_data.arff", nomeBase, i, nomeBase);
+			input = fopen(nomeArquivo, "r");
+			
+			//Informa possível falha na abertura da partição. 
+			if (input == NULL){																											
+				printf("Arquivo não encontrado!\n");																					
+				printf("\n%s", nomeArquivo);
+				printf("\nlenght = %d", strlen(nomeArquivo));
+				system("pause");
+				exit(1);																												
+			}
+			
+			//Posiciona arquivo da partição na linha de início dos dados.
+			const int tamanhoMaximoLinha = 3000;
+			char bufferAux[tamanhoMaximoLinha];
+			while(!feof(input)){
+				fgets(bufferAux, tamanhoMaximoLinha, input);
+				if(strstr(bufferAux, "@data") != NULL)
+					break;
+			} 
+			
+			//Copia cada linha de exemplo do arquivo da partição 
+			while ((linhaCopiada = fgetc(input)) != EOF){
+					fputc(linhaCopiada, dados);
+			}
+			
+			//Fecha arquivo da partição copiada.
+			fclose(input);
+		}
+	}
+	return dados;
 }
 
 /* Função para contar atributos da classe */
@@ -761,6 +849,7 @@ char* localizaString(char* string, FILE* arq){
 void carregaParametros(FILE* file, parametros* param){
 
 	(*param).arquivo = strtok(saltaStringArq("@arquivo_treino:", file), "\n");
+	(*param).arquivo_teste = strtok(saltaStringArq("@arquivo_teste:", file), "\n");
 	(*param).execucoes = atoi(saltaStringArq("@execucoes:", file));
 	(*param).classe = atoi(saltaStringArq("@classe:", file));
 	(*param).funcao_obj = atoi(saltaStringArq("@funcao_objetivo:", file));
@@ -781,7 +870,8 @@ void carregaParametros(FILE* file, parametros* param){
 void imprimeParametros(parametros param){
 
 	printf("\nParametros:\n\n");
-	printf("Arquivo = %s\n", param.arquivo);
+	printf("Arquivo de treino = %s\n", param.arquivo);
+	printf("Arquivo de teste = %s\n", param.arquivo_teste);
 	printf("Execucoes = %d\n", param.execucoes);
 	printf("Classe = %d\n", param.classe);
 	printf("Funcao Objetivo = %d\n", param.funcao_obj);
@@ -1055,7 +1145,7 @@ double** carregaVelocidadeParticulaDevice(particula p, atributo* atrib, int quan
 	}
 
 	//aloca vetor vel_d no device e copia de vel as referências aos ponteiros alocados no device
-	double** vel_d; 
+	double** vel_d;
 	cudaMalloc(&vel_d, quant_atrib * sizeof(double));
 	cudaMemcpy(vel_d, vel, quant_atrib * sizeof(double), cudaMemcpyHostToDevice);
 
@@ -2781,6 +2871,108 @@ void imprimeSolucao(regiao_pareto solucao, atributo* atrib, int quant_atrib){
 	}
 }
 
+//////////////////////////////////////// INÍCIO DE CLASSIFICAÇÃO ////////////////////////////////////////
+
+classificador inicializaClassificador(regra* regras, int quant_regras){
+	classificador c;
+	c.quant_regras = quant_regras;
+	c.regras = regras;
+
+	int i;
+	for (i = 0; i < quant_mat_conf; i++)
+		c.mat_conf[i] = 0;
+
+	return c;
+}
+
+int comparaEspecificidade(const void *a, const void *b){
+	regra *x = (regra *)a;
+	regra *y = (regra *)b;
+
+	if ((*x).func_ob[SPEC] >(*y).func_ob[SPEC])
+		return -1;
+	if ((*x).func_ob[SPEC] < (*y).func_ob[SPEC])
+		return 1;
+	return 0;
+}
+
+void ordenaRegrasMaiorEspecificidade(regra* regras, int quant_regras){
+	qsort(regras, quant_regras, sizeof(regra), comparaEspecificidade);
+}
+
+/*Retorna 0 se a regra não cobre o exemplo ou 1 caso contrário.*/
+int cobreExemplo(regra r, exemplo e, int quant_atrib){
+	int i;
+	for (i = 0; i < quant_atrib - 1; i++){
+		if ((e.campos[i] != r.valores[i]) && (r.valores[i] != -1)){
+			return 0;
+		}
+	}
+	return 1;
+}
+
+regra* buscaRegrasVotantes(regra* regrasClass, int quant_regras_class, exemplo e, int quant_atrib, int quant_max_regras_vot){
+	regra *regrasVot = (regra*)calloc(quant_max_regras_vot, sizeof(regra));
+
+	//inicializa regras como nulas
+	regra rNula;
+	rNula.nula = 1;
+
+	int i;
+	for (i = 0; i < quant_max_regras_vot; i++)
+		regrasVot[i] = rNula;
+
+	int positivas = 0;
+	int negativas = 0;
+
+	//busca votantes da classe do exemplo
+	for (i = 0; i < quant_regras_class; i++){
+		regra r = regrasClass[i];
+		if (cobreExemplo(r, e, quant_atrib)){
+			regrasVot[positivas + negativas] = r;
+			if (positivas < quant_max_regras_vot / 2 && r.valores[quant_atrib - 1] == 0)	positivas++;
+			else if (negativas < quant_max_regras_vot / 2 && r.valores[quant_atrib - 1] == 1) negativas++;
+
+			if (positivas >= quant_max_regras_vot / 2 && negativas >= quant_max_regras_vot / 2)
+				break;
+		}
+	}
+	return regrasVot;
+}
+
+int calculaVotacao(regra* votantes, int quant_votantes, int func_ob, int quant_atrib){
+	double votos = 0;
+	int i;
+	for (i = 0; i < quant_votantes; i++){
+		regra r = votantes[i];
+		if (r.nula == 0){
+			if (r.valores[quant_atrib - 1] == 0)	votos += r.func_ob[func_ob];	//voto para classe positiva
+			else votos -= r.func_ob[func_ob];	//voto para classe negativa
+		}
+	}
+
+	return votos >= 0 ? 0 : 1;	//se > 0, votaram que o exemplo é da classe positiva
+}
+
+void classificaExemplos(classificador* c, exemplo* exemplos, int quant_exemp, int quant_atrib){
+
+	int quant_regras_vot = 2 * 2;	// 2 vezes número de classes K (K positivas e K negativas)
+
+	int i;
+	for (i = 0; i < quant_exemp; i++){
+		regra* votantes = buscaRegrasVotantes((*c).regras, (*c).quant_regras, exemplos[i], quant_atrib, quant_regras_vot);
+		int classe = calculaVotacao(votantes, quant_regras_vot, SPEC, quant_atrib);
+		int classeReal = exemplos[i].campos[quant_atrib - 1];
+
+		if (classe == 0 && classeReal == 0) (*c).mat_conf[TP]++;
+		else if (classe == 0 && classeReal == 1) (*c).mat_conf[FP]++;
+		else if (classe == 1 && classeReal == 1) (*c).mat_conf[TN]++;
+		else if (classe == 1 && classeReal == 0) (*c).mat_conf[FN]++;
+	}
+}
+
+//////////////////////////////////////// FIM DE CLASSIFICAÇÃO ////////////////////////////////////////
+
 int main(){
 
 	system("cls");
@@ -2817,6 +3009,9 @@ int main(){
 	FILE* input = carregarArq(h_param.arquivo);
 	FILE* output = fopen("saida.txt", "w");
 
+	//carrega arquito de teste do classificador final
+	FILE* teste = carregarArq(h_param.arquivo_teste);
+
 	//carrega atributos
 	int quant_atrib = contaAtributos(input);	// quantidade de atributos dos elementos da base de dados;
 	atributo *atrib_h, *atrib_d;	// ponteiros para alocação dinâmica do vetor com atributos;
@@ -2830,7 +3025,7 @@ int main(){
 	imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
 	cudaMemcpy(atrib_d, atrib_h, sizeof(atributo) * quant_atrib, cudaMemcpyHostToDevice);
 
-	//carrega exemplos
+	//carrega exemplos de treino
 	int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
 	exemplo *exemplos_h, *exemplos_d;																							// ponteiros para alocação dinâmica do vetor com exemplos;
 	cudaMallocHost((void**)&exemplos_h, sizeof(exemplo) * quant_exemp);
@@ -2841,6 +3036,11 @@ int main(){
 	}
 	processaExemplos(atrib_h, quant_atrib, exemplos_h, input);
 	cudaMemcpy(exemplos_d, exemplos_h, sizeof(exemplo) * quant_exemp, cudaMemcpyHostToDevice);
+
+	//carrega exemplos de teste do classificador final (apenas no host)
+	int quant_exemp_test = contaExemplos(teste);
+	exemplo *testes = (exemplo*)calloc(quant_exemp_test, sizeof(exemplo));
+	processaExemplos(atrib_h, quant_atrib, testes, teste);
 
 	//carrega enxames iniciais
 	particula *enxames_h, *enxames_d;																								//ponteiros para alocação dinâmica do vetor com as partículas dos enxames
@@ -2880,13 +3080,12 @@ int main(){
 	setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
 
 	//INICIA PSO
-	
+
 	printf("Inicio de processamento no kernel\n");
-	//criaEnxames<<<param.quant_enxames, param.quant_particulas>>>(param, exemplos_d, quant_exemp, atrib_d, quant_atrib, enxame_d, devStates);
 	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
-		(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d,	devStates);
+		(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d, devStates);
 	printf("Fim de processamento no kernel\n");
-	
+
 	//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
 
 	cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
@@ -2895,6 +3094,19 @@ int main(){
 	insereSolucoesEmArquivo(pareto, h_param, output);
 	insereNomesSolucoesArquivo(pareto, h_param, output, atrib_h, quant_atrib);
 	imprimeDominioPareto(pareto, quant_atrib);
+
+	//INICIA PROCESSO DE AVALIAÇÃO DO CLASSIFICADOR
+
+	//imprimeExemplosInt(testes, quant_exemp_test);
+
+	classificador c = inicializaClassificador(pareto.solucoes, pareto.quant_sol_pareto);
+	ordenaRegrasMaiorEspecificidade(c.regras, c.quant_regras);
+	classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
+
+	for (int i = 0; i < quant_mat_conf; i++)
+		printf("\nMatConf[%d]: %d", i, c.mat_conf[i]);
+
+	//FIM DO PROGRAMA
 
 	fclose(arq_parametros);
 	fclose(input);
