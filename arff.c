@@ -7,6 +7,7 @@
 #include <cuda.h>
 #include <curand_kernel.h>
 #include <math.h>
+#include <windows.h>
 
 // DEFINIÇÃO DE CONSTANTES
 
@@ -150,67 +151,121 @@ FILE* carregarArqDados(char nomeBase[], int numero){
 	//para o treinamento. Além disso, copia o cabeçalho do arquivo da 1ª partição, de modo
 	//que o arquivo final possa ter seus atributos processados. 
 	FILE* dados = fopen("conjunto_particoes_dados.txt", "w");
-	
+	if (dados == NULL){
+
+		printf("Nao foi possivel criar arquivo!\n");
+		printf("\n%s", "conjunto_particoes_dados.txt");
+		system("pause");
+		exit(1);
+	}
+
 	//Constroi nome completo do diretório da partição 0.
-	char nomeArquivo[20];
-	sprintf(nomeArquivo, "%s/it%d/%s_data.arff", nomeBase, 0, nomeBase);
+	char nomeArquivo[40];
+	sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, 0, nomeBase);
 	FILE* input = fopen(nomeArquivo, "r");
-	
+
 	//Informa possível falha na abertura da partição. 
-	if (input == NULL){																											
-		printf("Arquivo não encontrado!\n");																					
+	if (input == NULL){
+		printf("Arquivo não encontrado!\n");
 		printf("\n%s", nomeArquivo);
 		printf("\nlenght = %d", strlen(nomeArquivo));
 		system("pause");
-		exit(1);																												
+		exit(1);
 	}
-	
+
 	//Copia cada linha do arquivo da partição 0, até que todo o cabeçalho tenha sido copiado. 
+	const int tamanhoMaximoLinha = 3000;
+	char bufferAux[tamanhoMaximoLinha];
 	char linhaCopiada;
-	while ((linhaCopiada = fgetc(input)) != EOF && strstr(linhaCopiada, "@data") == NULL){
-			fputc(linhaCopiada, dados);
+
+	while (!feof(input)){
+		fgets(bufferAux, tamanhoMaximoLinha, input);
+		if (strstr(bufferAux, "@data") == NULL)
+			fprintf(dados, bufferAux);
+		else
+			break;
 	}
-	
+
+	//Insere a palavra-chave "@data" no fim do cabeçalho, de modo a indicar o início dos dados de exemplo.
+	fprintf(dados, "@data\n");
+
 	//Fecha arquivo da partição copiada.
 	fclose(input);
-	
+
 	//Percorre a pasta de cada partição e a copia para o arquivo final.
 	const int maximoParticoes = 10;
-	for(int i = 0; i < maximoParticoes; i++){
-		if(i != numero){
-			
+	for (int i = 0; i < maximoParticoes; i++){
+		if (i != numero){
+
 			//Constroi nome completo do diretório da partição atualmente consultada.
-			sprintf(nomeArquivo, "%s/it%d/%s_data.arff", nomeBase, i, nomeBase);
+			sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, i, nomeBase);
 			input = fopen(nomeArquivo, "r");
-			
+
 			//Informa possível falha na abertura da partição. 
-			if (input == NULL){																											
-				printf("Arquivo não encontrado!\n");																					
+			if (input == NULL){
+				printf("Arquivo não encontrado!\n");
 				printf("\n%s", nomeArquivo);
 				printf("\nlenght = %d", strlen(nomeArquivo));
 				system("pause");
-				exit(1);																												
+				exit(1);
 			}
-			
+
 			//Posiciona arquivo da partição na linha de início dos dados.
-			const int tamanhoMaximoLinha = 3000;
-			char bufferAux[tamanhoMaximoLinha];
-			while(!feof(input)){
+			while (!feof(input)){
 				fgets(bufferAux, tamanhoMaximoLinha, input);
-				if(strstr(bufferAux, "@data") != NULL)
+				if (strstr(bufferAux, "@data") != NULL)
 					break;
-			} 
-			
+			}
+
 			//Copia cada linha de exemplo do arquivo da partição 
 			while ((linhaCopiada = fgetc(input)) != EOF){
-					fputc(linhaCopiada, dados);
+				fputc(linhaCopiada, dados);
 			}
-			
-			//Fecha arquivo da partição copiada.
+
+			//Insere uma quebra de linha no arquivo final e, por fim, fecha o arquivo da partição copiada.
+			fprintf(dados, "\n");
 			fclose(input);
 		}
 	}
+
+	//fecha arquivo de dados final.
+	fclose(dados);
+
+	//abre arquivo de dados acima já em modo de leitura.
+	dados = fopen("conjunto_particoes_dados.txt", "r");
+	if (dados == NULL){
+
+		printf("Nao foi possivel criar arquivo!\n");
+		printf("\n%s", "conjunto_particoes_dados.txt");
+		system("pause");
+		exit(1);
+	}
+
 	return dados;
+}
+
+/* Função para carrear o arquivo .arff de teste, dentre os arquivos particionados.
+Considera-se que existam 10 partições, sendo o parâmetro número referente
+à partição que será utilizada apenas para o teste. */
+FILE* carregarArqTeste(char nomeBase[], int numero){
+
+	//Constroi nome completo do diretório da partição de teste.
+	char nomeArquivo[40];
+	sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, numero, nomeBase);
+
+	//Abre arquivo da partição de teste.
+	FILE* teste = fopen(nomeArquivo, "r");
+
+	//Informa possível falha na abertura da partição. 
+	if (teste == NULL){
+		printf("Arquivo não encontrado!\n");
+		printf("\n%s", nomeArquivo);
+		printf("\nlenght = %d", strlen(nomeArquivo));
+		system("pause");
+		exit(1);
+	}
+
+	return teste;
 }
 
 /* Função para contar atributos da classe */
@@ -3005,122 +3060,173 @@ int main(){
 	cudaMemcpy(d_param, &h_param, sizeof(parametros), cudaMemcpyHostToDevice);
 	carregaParametros(arq_parametros, &h_param); //recupera referência às funções objetivo originais presentes no device
 
-	//carrega arquivos de entrada e saída
-	FILE* input = carregarArq(h_param.arquivo);
-	FILE* output = fopen("saida.txt", "w");
+	//cria diretório onde serão colocados todos os arquivos de saída
+	char diretorioSaida[10] = "saida";
+	CreateDirectory(diretorioSaida, NULL);
 
-	//carrega arquito de teste do classificador final
-	FILE* teste = carregarArq(h_param.arquivo_teste);
+	//inicializa arquivo onde serão escritos os dados das matrizes de confusão referentes aos testes em cada partição.
+	char nomeArquivoMatrizConf[20];
+	sprintf(nomeArquivoMatrizConf, "%s/matriz_confusao.txt", diretorioSaida);
+	FILE* outputMatrizConf = fopen(nomeArquivoMatrizConf, "w");
 
-	//carrega atributos
-	int quant_atrib = contaAtributos(input);	// quantidade de atributos dos elementos da base de dados;
-	atributo *atrib_h, *atrib_d;	// ponteiros para alocação dinâmica do vetor com atributos;
-	cudaMallocHost((void**)&atrib_h, sizeof(atributo) * quant_atrib);
-	cudaMalloc(&atrib_d, sizeof(atributo) * quant_atrib);
-	if (atrib_h == NULL || atrib_d == NULL){
-		printf("\nErro de alcocacao!");
-		system("pause");
+	//inicializa arquivo onde serão escritos os tempos de execução de processamento.
+	char nomeArquivoTemposExecucao[40];
+	sprintf(nomeArquivoTemposExecucao, "%s/tempos_execucao.txt", diretorioSaida);
+	FILE* outputTempo = fopen(nomeArquivoTemposExecucao, "w");
+
+	//INICIA PROCESSAMENTO POR PARTIÇÕES DE ARQUIVOS DE TREINAMENTO E DE TESTE
+
+	for (int i = 0; i < 10; i++){
+
+		//carrega arquivos de entrada de exemplos
+		FILE* input = carregarArqDados(h_param.arquivo, i);
+		
+		//carrega arquivo que receberá as regras de saída (soluções)
+		char nomeArquivoSaida[20];
+		sprintf(nomeArquivoSaida, "%s/saida%d.txt", diretorioSaida, i);
+		FILE* output = fopen(nomeArquivoSaida, "w");
+
+		//carrega arquito de teste do classificador final
+		FILE* teste = carregarArqTeste(h_param.arquivo, i);
+
+		//carrega atributos
+		int quant_atrib = contaAtributos(input);	// quantidade de atributos dos elementos da base de dados;
+		atributo *atrib_h, *atrib_d;	// ponteiros para alocação dinâmica do vetor com atributos;
+		cudaMallocHost((void**)&atrib_h, sizeof(atributo) * quant_atrib);
+		cudaMalloc(&atrib_d, sizeof(atributo) * quant_atrib);
+		if (atrib_h == NULL || atrib_d == NULL){
+			printf("\nErro de alcocacao!");
+			system("pause");
+		}
+		processaAtributos(atrib_h, quant_atrib, input);	//preenche vetor de atributos da classe;
+		imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
+		cudaMemcpy(atrib_d, atrib_h, sizeof(atributo) * quant_atrib, cudaMemcpyHostToDevice);
+
+		//carrega exemplos de treino
+		int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
+		exemplo *exemplos_h, *exemplos_d;																							// ponteiros para alocação dinâmica do vetor com exemplos;
+		cudaMallocHost((void**)&exemplos_h, sizeof(exemplo) * quant_exemp);
+		cudaMalloc(&exemplos_d, sizeof(exemplo) * quant_exemp);
+		if (exemplos_h == NULL || exemplos_d == NULL){
+			printf("\nErro de alcocacao!");
+			system("pause");
+		}
+		processaExemplos(atrib_h, quant_atrib, exemplos_h, input);
+		cudaMemcpy(exemplos_d, exemplos_h, sizeof(exemplo) * quant_exemp, cudaMemcpyHostToDevice);
+
+		//carrega exemplos de teste do classificador final (apenas no host)
+		int quant_exemp_test = contaExemplos(teste);
+		exemplo *testes = (exemplo*)calloc(quant_exemp_test, sizeof(exemplo));
+		processaExemplos(atrib_h, quant_atrib, testes, teste);
+
+		//carrega enxames iniciais
+		particula *enxames_h, *enxames_d;																								//ponteiros para alocação dinâmica do vetor com as partículas dos enxames
+		int quant_total_particulas = h_param.quant_particulas * h_param.quant_enxames;
+		cudaMallocHost((void**)&enxames_h, sizeof(particula) * quant_total_particulas);
+		cudaMalloc(&enxames_d, sizeof(particula) * quant_total_particulas);
+		if (enxames_h == NULL || enxames_d == NULL){
+			printf("\nErro de alcocacao!");
+			system("pause");
+		}
+
+		for (int i = 0; i < h_param.quant_enxames; i++){	//cria enxames individualmente e atribui a variável que apontará para todos os enxames
+			particula *enxame_h = criaEnxame(h_param, atrib_h, quant_atrib);
+			for (int j = 0; j < h_param.quant_particulas; j++)
+				enxames_h[i * h_param.quant_particulas + j] = enxame_h[j];
+		}
+
+		for (int i = 0; i < quant_total_particulas; i++)
+			enxames_h[i].velocidade = carregaVelocidadeParticulaDevice(enxames_h[i], atrib_h, quant_atrib);	//partículas dos enxames passam a apontar para velocidades alocadas no device
+
+		cudaMemcpy(enxames_d, enxames_h, sizeof(particula) * quant_total_particulas, cudaMemcpyHostToDevice);
+
+		//configura vetores que receberão as posições finais das partículas após a execução do kernel
+		regra *posicoes_h, *posicoes_d;
+		cudaMallocHost((void**)&posicoes_h, sizeof(regra) * quant_total_particulas);
+		cudaMalloc(&posicoes_d, sizeof(regra) * quant_total_particulas);
+		cudaMemcpy(posicoes_d, posicoes_h, sizeof(regra) * quant_total_particulas, cudaMemcpyHostToDevice);
+
+		//CONFIGURA ALEATORIEDADE
+
+		//configura aleatoriedade no host
+		srand((unsigned)time(NULL));
+
+		//configura aleatoriedade no device
+		curandState* devStates;
+		cudaMalloc(&devStates, quant_total_particulas * sizeof(curandState));
+		setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
+
+		//INICIALIZA TIMERS
+
+		//declara marcadores de tempo de início e fim
+		cudaEvent_t eventoInicio, eventoFim;
+		
+		//inicializa marcadores de tempo
+		cudaEventCreate(&eventoInicio);
+		cudaEventCreate(&eventoFim);
+
+		//INICIA PSO
+
+		printf("Inicio de processamento no kernel\n");
+		cudaEventRecord(eventoInicio);
+		
+		SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
+			(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d, devStates);
+		
+		cudaDeviceSynchronize();
+		cudaEventRecord(eventoFim);
+		printf("Fim de processamento no kernel\n");
+
+		//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
+
+		cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
+		posicoes_h = apagaRegrasIguais(posicoes_h, &quant_total_particulas, quant_atrib);
+		regiao_pareto pareto = dominanciaDePareto(h_param, posicoes_h, quant_total_particulas);
+		insereSolucoesEmArquivo(pareto, h_param, output);
+		insereNomesSolucoesArquivo(pareto, h_param, output, atrib_h, quant_atrib);
+		imprimeDominioPareto(pareto, quant_atrib);
+
+		//INICIA PROCESSO DE AVALIAÇÃO DO CLASSIFICADOR
+
+		//imprimeExemplosInt(testes, quant_exemp_test);
+
+		classificador c = inicializaClassificador(pareto.solucoes, pareto.quant_sol_pareto);
+		ordenaRegrasMaiorEspecificidade(c.regras, c.quant_regras);
+		classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
+
+		//imprime matriz no arquivo final
+		for (int i = 0; i < quant_mat_conf; i++){
+			printf("\nMatConf[%d]: %d", i, c.mat_conf[i]);
+			fprintf(outputMatrizConf, "MatConf[%d]: %d\n", i, c.mat_conf[i]);
+		}
+		fprintf(outputMatrizConf, "\n", i, c.mat_conf[i]);
+
+		//ARMAZENA TEMPO DE EXECUÇÃO MEDIDO
+
+		float tempo = 0;
+		cudaEventElapsedTime(&tempo, eventoInicio, eventoFim);
+		fprintf(outputTempo, "%fms\n", tempo);
+
+		//fecha arquivos desta partição e limpa memória cuda.
+		fclose(input);
+		fclose(output);
+
+		cudaFree(atrib_h);
+		cudaFree(exemplos_h);
+		cudaFree(enxames_h);
+
+		cudaFree(atrib_d);
+		cudaFree(exemplos_d);
+		cudaFree(enxames_d);
+		cudaFree(devStates);
 	}
-	processaAtributos(atrib_h, quant_atrib, input);	//preenche vetor de atributos da classe;
-	imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
-	cudaMemcpy(atrib_d, atrib_h, sizeof(atributo) * quant_atrib, cudaMemcpyHostToDevice);
 
-	//carrega exemplos de treino
-	int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
-	exemplo *exemplos_h, *exemplos_d;																							// ponteiros para alocação dinâmica do vetor com exemplos;
-	cudaMallocHost((void**)&exemplos_h, sizeof(exemplo) * quant_exemp);
-	cudaMalloc(&exemplos_d, sizeof(exemplo) * quant_exemp);
-	if (exemplos_h == NULL || exemplos_d == NULL){
-		printf("\nErro de alcocacao!");
-		system("pause");
-	}
-	processaExemplos(atrib_h, quant_atrib, exemplos_h, input);
-	cudaMemcpy(exemplos_d, exemplos_h, sizeof(exemplo) * quant_exemp, cudaMemcpyHostToDevice);
-
-	//carrega exemplos de teste do classificador final (apenas no host)
-	int quant_exemp_test = contaExemplos(teste);
-	exemplo *testes = (exemplo*)calloc(quant_exemp_test, sizeof(exemplo));
-	processaExemplos(atrib_h, quant_atrib, testes, teste);
-
-	//carrega enxames iniciais
-	particula *enxames_h, *enxames_d;																								//ponteiros para alocação dinâmica do vetor com as partículas dos enxames
-	int quant_total_particulas = h_param.quant_particulas * h_param.quant_enxames;
-	cudaMallocHost((void**)&enxames_h, sizeof(particula) * quant_total_particulas);
-	cudaMalloc(&enxames_d, sizeof(particula) * quant_total_particulas);
-	if (enxames_h == NULL || enxames_d == NULL){
-		printf("\nErro de alcocacao!");
-		system("pause");
-	}
-
-	for (int i = 0; i < h_param.quant_enxames; i++){	//cria enxames individualmente e atribui a variável que apontará para todos os enxames
-		particula *enxame_h = criaEnxame(h_param, atrib_h, quant_atrib);
-		for (int j = 0; j < h_param.quant_particulas; j++)
-			enxames_h[i * h_param.quant_particulas + j] = enxame_h[j];
-	}
-
-	for (int i = 0; i < quant_total_particulas; i++)
-		enxames_h[i].velocidade = carregaVelocidadeParticulaDevice(enxames_h[i], atrib_h, quant_atrib);	//partículas dos enxames passam a apontar para velocidades alocadas no device
-
-	cudaMemcpy(enxames_d, enxames_h, sizeof(particula) * quant_total_particulas, cudaMemcpyHostToDevice);
-
-	//configura vetores que receberão as posições finais das partículas após a execução do kernel
-	regra *posicoes_h, *posicoes_d;
-	cudaMallocHost((void**)&posicoes_h, sizeof(regra) * quant_total_particulas);
-	cudaMalloc(&posicoes_d, sizeof(regra) * quant_total_particulas);
-	cudaMemcpy(posicoes_d, posicoes_h, sizeof(regra) * quant_total_particulas, cudaMemcpyHostToDevice);
-
-	//CONFIGURA ALEATORIEDADE
-
-	//configura aleatoriedade no host
-	srand((unsigned)time(NULL));
-
-	//configura aleatoriedade no device
-	curandState* devStates;
-	cudaMalloc(&devStates, quant_total_particulas * sizeof(curandState));
-	setup_kernel << < h_param.quant_enxames, h_param.quant_particulas >> > (devStates, time(NULL));
-
-	//INICIA PSO
-
-	printf("Inicio de processamento no kernel\n");
-	SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
-		(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d, devStates);
-	printf("Fim de processamento no kernel\n");
-
-	//TRATA POSIÇÃO FINAL DAS PARTÍCULAS
-
-	cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
-	posicoes_h = apagaRegrasIguais(posicoes_h, &quant_total_particulas, quant_atrib);
-	regiao_pareto pareto = dominanciaDePareto(h_param, posicoes_h, quant_total_particulas);
-	insereSolucoesEmArquivo(pareto, h_param, output);
-	insereNomesSolucoesArquivo(pareto, h_param, output, atrib_h, quant_atrib);
-	imprimeDominioPareto(pareto, quant_atrib);
-
-	//INICIA PROCESSO DE AVALIAÇÃO DO CLASSIFICADOR
-
-	//imprimeExemplosInt(testes, quant_exemp_test);
-
-	classificador c = inicializaClassificador(pareto.solucoes, pareto.quant_sol_pareto);
-	ordenaRegrasMaiorEspecificidade(c.regras, c.quant_regras);
-	classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
-
-	for (int i = 0; i < quant_mat_conf; i++)
-		printf("\nMatConf[%d]: %d", i, c.mat_conf[i]);
 
 	//FIM DO PROGRAMA
 
 	fclose(arq_parametros);
-	fclose(input);
-	fclose(output);
-
-	cudaFree(atrib_h);
-	cudaFree(exemplos_h);
-	cudaFree(enxames_h);
-
-	cudaFree(atrib_d);
-	cudaFree(exemplos_d);
-	cudaFree(enxames_d);
-	cudaFree(devStates);
-
+	fclose(outputMatrizConf);
+	fclose(outputTempo);
 	system("pause");
 
 	return 0;
