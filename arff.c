@@ -4,6 +4,9 @@
 #include<string.h>
 #include<stdlib.h>
 #include<time.h>
+#include <curand_kernel.h>
+#include <math.h>
+#include <windows.h>
 
 // DEFINIÇÃO DE CONSTANTES
 
@@ -12,6 +15,7 @@
 #define quant_max_atrib 100																											// quantidade máxima de atributos do arquivo;
 #define quant_mat_cont 8																											// quantidade de posições no vetor da matriz de contigência;
 #define quant_func_ob 8																												// quantidade de posições no vetor das funções objetivo;
+#define quant_mat_conf 4																											// quantidade de posições no vetor da matriz de confusão;
 
 /* posições da matriz de contingência */
 #define BH 0																														// B verdade e H verdade;
@@ -32,6 +36,12 @@
 #define SPEC 5																														// cobertura;
 #define COV 6																														// suporte;
 #define SUP 7
+
+/* posições da matriz de confusão */
+#define TP 0																														// positivo verdadeiro
+#define FP 1																														// falso positivo
+#define TN 2																														// negativo verdadeiro
+#define FN 3																														// falso negativo
 
 const double MAX_PHI = 1;
 const double MAX_OMEGA = 0.8;
@@ -66,6 +76,14 @@ struct regra{
 	int quant_dominadores;																										// quantidade de regras que dominam por Pareto esta regra;
 };
 typedef struct regra regra;
+
+struct classificador{
+
+	regra* regras;																												// regras que compõem o classificador;
+	int quant_regras;																											// quantidade de regras que compõem o classificador;
+	int mat_conf[quant_mat_conf];																								// matriz de confusão do classificador;
+};
+typedef struct classificador classificador;
 
 struct parametros{
 
@@ -118,6 +136,132 @@ FILE* carregarArq(char argv[]){
 		exit(1);																												// e finaliza
 	}
 	return input;
+}
+
+/* Função para carrear os arquivos .arff de exemplos particionados.
+Considera-se que existam 10 partições, sendo o parâmetro número referente
+à partição que não será utilizada para o treinamento (apenas para o teste). */
+FILE* carregarArqDados(char nomeBase[], int numero){
+
+	//Cria arquivo que receberá o conjunto dos exemplos de todas as partições consideradas
+	//para o treinamento. Além disso, copia o cabeçalho do arquivo da 1ª partição, de modo
+	//que o arquivo final possa ter seus atributos processados. 
+	FILE* dados = fopen("conjunto_particoes_dados.txt", "w");
+	if (dados == NULL){
+
+		printf("Nao foi possivel criar arquivo!\n");
+		printf("\n%s", "conjunto_particoes_dados.txt");
+		system("pause");
+		exit(1);
+	}
+
+	//Constroi nome completo do diretório da partição 0.
+	char nomeArquivo[40];
+	sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, 0, nomeBase);
+	FILE* input = fopen(nomeArquivo, "r");
+
+	//Informa possível falha na abertura da partição. 
+	if (input == NULL){
+		printf("Arquivo não encontrado!\n");
+		printf("\n%s", nomeArquivo);
+		printf("\nlenght = %d", strlen(nomeArquivo));
+		system("pause");
+		exit(1);
+	}
+
+	//Copia cada linha do arquivo da partição 0, até que todo o cabeçalho tenha sido copiado. 
+	const int tamanhoMaximoLinha = 3000;
+	char bufferAux[tamanhoMaximoLinha];
+	char linhaCopiada;
+
+	while (!feof(input)){
+		fgets(bufferAux, tamanhoMaximoLinha, input);
+		if (strstr(bufferAux, "@data") == NULL)
+			fprintf(dados, bufferAux);
+		else
+			break;
+	}
+
+	//Insere a palavra-chave "@data" no fim do cabeçalho, de modo a indicar o início dos dados de exemplo.
+	fprintf(dados, "@data\n");
+
+	//Fecha arquivo da partição copiada.
+	fclose(input);
+
+	//Percorre a pasta de cada partição e a copia para o arquivo final.
+	const int maximoParticoes = 10;
+	for (int i = 0; i < maximoParticoes; i++){
+		if (i != numero){
+
+			//Constroi nome completo do diretório da partição atualmente consultada.
+			sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, i, nomeBase);
+			input = fopen(nomeArquivo, "r");
+
+			//Informa possível falha na abertura da partição. 
+			if (input == NULL){
+				printf("Arquivo não encontrado!\n");
+				printf("\n%s", nomeArquivo);
+				printf("\nlenght = %d", strlen(nomeArquivo));
+				system("pause");
+				exit(1);
+			}
+
+			//Posiciona arquivo da partição na linha de início dos dados.
+			while (!feof(input)){
+				fgets(bufferAux, tamanhoMaximoLinha, input);
+				if (strstr(bufferAux, "@data") != NULL)
+					break;
+			}
+
+			//Copia cada linha de exemplo do arquivo da partição 
+			while ((linhaCopiada = fgetc(input)) != EOF){
+				fputc(linhaCopiada, dados);
+			}
+
+			//Insere uma quebra de linha no arquivo final e, por fim, fecha o arquivo da partição copiada.
+			fprintf(dados, "\n");
+			fclose(input);
+		}
+	}
+
+	//fecha arquivo de dados final.
+	fclose(dados);
+
+	//abre arquivo de dados acima já em modo de leitura.
+	dados = fopen("conjunto_particoes_dados.txt", "r");
+	if (dados == NULL){
+
+		printf("Nao foi possivel criar arquivo!\n");
+		printf("\n%s", "conjunto_particoes_dados.txt");
+		system("pause");
+		exit(1);
+	}
+
+	return dados;
+}
+
+/* Função para carrear o arquivo .arff de teste, dentre os arquivos particionados.
+Considera-se que existam 10 partições, sendo o parâmetro número referente
+à partição que será utilizada apenas para o teste. */
+FILE* carregarArqTeste(char nomeBase[], int numero){
+
+	//Constroi nome completo do diretório da partição de teste.
+	char nomeArquivo[40];
+	sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, numero, nomeBase);
+
+	//Abre arquivo da partição de teste.
+	FILE* teste = fopen(nomeArquivo, "r");
+
+	//Informa possível falha na abertura da partição. 
+	if (teste == NULL){
+		printf("Arquivo não encontrado!\n");
+		printf("\n%s", nomeArquivo);
+		printf("\nlenght = %d", strlen(nomeArquivo));
+		system("pause");
+		exit(1);
+	}
+
+	return teste;
 }
 
 /* Função para contar atributos da classe */
@@ -1882,67 +2026,229 @@ void imprimeSolucao(regiao_pareto solucao, atributo* atrib, int quant_atrib){
 	}
 }
 
-int main(/*int argc, char* argv[]*/){
+//////////////////////////////////////// INÍCIO DE CLASSIFICAÇÃO ////////////////////////////////////////
+
+classificador inicializaClassificador(regra* regras, int quant_regras){
+	classificador c;
+	c.quant_regras = quant_regras;
+	c.regras = regras;
+
+	int i;
+	for (i = 0; i < quant_mat_conf; i++)
+		c.mat_conf[i] = 0;
+
+	return c;
+}
+
+int comparaEspecificidade(const void *a, const void *b){
+	regra *x = (regra *)a;
+	regra *y = (regra *)b;
+
+	if ((*x).func_ob[SPEC] >(*y).func_ob[SPEC])
+		return -1;
+	if ((*x).func_ob[SPEC] < (*y).func_ob[SPEC])
+		return 1;
+	return 0;
+}
+
+void ordenaRegrasMaiorEspecificidade(regra* regras, int quant_regras){
+	qsort(regras, quant_regras, sizeof(regra), comparaEspecificidade);
+}
+
+/*Retorna 0 se a regra não cobre o exemplo ou 1 caso contrário.*/
+int cobreExemplo(regra r, exemplo e, int quant_atrib){
+	int i;
+	for (i = 0; i < quant_atrib - 1; i++){
+		if ((e.campos[i] != r.valores[i]) && (r.valores[i] != -1)){
+			return 0;
+		}
+	}
+	return 1;
+}
+
+regra* buscaRegrasVotantes(regra* regrasClass, int quant_regras_class, exemplo e, int quant_atrib, int quant_max_regras_vot){
+	regra *regrasVot = (regra*)calloc(quant_max_regras_vot, sizeof(regra));
+
+	//inicializa regras como nulas
+	regra rNula;
+	rNula.nula = 1;
+
+	int i;
+	for (i = 0; i < quant_max_regras_vot; i++)
+		regrasVot[i] = rNula;
+
+	int positivas = 0;
+	int negativas = 0;
+
+	//busca votantes da classe do exemplo
+	for (i = 0; i < quant_regras_class; i++){
+		regra r = regrasClass[i];
+		if (cobreExemplo(r, e, quant_atrib)){
+			regrasVot[positivas + negativas] = r;
+			if (positivas < quant_max_regras_vot / 2 && r.valores[quant_atrib - 1] == 0)	positivas++;
+			else if (negativas < quant_max_regras_vot / 2 && r.valores[quant_atrib - 1] == 1) negativas++;
+
+			if (positivas >= quant_max_regras_vot / 2 && negativas >= quant_max_regras_vot / 2)
+				break;
+		}
+	}
+	return regrasVot;
+}
+
+int calculaVotacao(regra* votantes, int quant_votantes, int func_ob, int quant_atrib){
+	double votos = 0;
+	int i;
+	for (i = 0; i < quant_votantes; i++){
+		regra r = votantes[i];
+		if (r.nula == 0){
+			if (r.valores[quant_atrib - 1] == 0)	votos += r.func_ob[func_ob];	//voto para classe positiva
+			else votos -= r.func_ob[func_ob];	//voto para classe negativa
+		}
+	}
+
+	return votos >= 0 ? 0 : 1;	//se > 0, votaram que o exemplo é da classe positiva
+}
+
+void classificaExemplos(classificador* c, exemplo* exemplos, int quant_exemp, int quant_atrib){
+
+	int quant_regras_vot = 2 * 2;	// 2 vezes número de classes K (K positivas e K negativas)
+
+	int i;
+	for (i = 0; i < quant_exemp; i++){
+		regra* votantes = buscaRegrasVotantes((*c).regras, (*c).quant_regras, exemplos[i], quant_atrib, quant_regras_vot);
+		int classe = calculaVotacao(votantes, quant_regras_vot, SPEC, quant_atrib);
+		int classeReal = exemplos[i].campos[quant_atrib - 1];
+
+		if (classe == 0 && classeReal == 0) (*c).mat_conf[TP]++;
+		else if (classe == 0 && classeReal == 1) (*c).mat_conf[FP]++;
+		else if (classe == 1 && classeReal == 1) (*c).mat_conf[TN]++;
+		else if (classe == 1 && classeReal == 0) (*c).mat_conf[FN]++;
+	}
+}
+
+//////////////////////////////////////// FIM DE CLASSIFICAÇÃO ////////////////////////////////////////
+
+int main(){
 
 	system("cls");
-	//printf("ARG1 = %s\n", argv[1]);
 
 	//VARIÁVEIS
 	FILE* arq_parametros = carregarArq("parametros.txt");
 	parametros param;																											// parâmetros para o algoritmo de busca local;
 	carregaParametros(arq_parametros, &param);
-	FILE* input = carregarArq(param.arquivo);
-	int quant_atrib = contaAtributos(input);																					// quantidade de atributos dos elementos da base de dados;
-	atributo* atrib = (atributo*)calloc(quant_atrib, sizeof(atributo));														// ponteiro para alocação dinâmica do vetor com atributos;
-	if (atrib == NULL){
-
-		printf("\nErro de alcocacao!");
-		system("pause");
-		exit(1);
-	}
-
-	int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
-	exemplo* exemplos = (exemplo*)calloc(quant_exemp, sizeof(exemplo));														// ponteiro para alocação dinâmica do vetor com exemplos;
-	if (exemplos == NULL){
-
-		printf("\nErro de alcocacao!");
-		system("pause");
-		exit(1);
-	}
-
-	//INICIA MÓDULOS
-
-	srand((unsigned)time(NULL));
 	imprimeParametros(param);
-	processaAtributos(atrib, quant_atrib, input);																				//preenche vetor de atributos da classe;
-	imprimeAtributos(atrib, quant_atrib);																						//imprime todas as informações contidas no vetor de atributos;
-	processaExemplos(atrib, quant_atrib, exemplos, input);
 
-	//imprimeExemplosInt(exemplos, quant_exemp);
-	//regra r = geraRegra(param, atrib, quant_atrib, param.classe);
-	//imprimeRegra(r, quant_atrib);
-	//preencheMatrizCont(&r, exemplos, quant_exemp, quant_atrib);
-	//imprimeMatrizCont(r);
-	//calculaFuncoesObj(&r, quant_atrib, atrib, quant_exemp);
-	//imprimeFuncoesObj(r);
+	//cria diretório onde serão colocados todos os arquivos de saída
+	const int tamanhoDiretorioSaida = 40;
+	char diretorioSaida[tamanhoDiretorioSaida];
+	sprintf(diretorioSaida, "saida-%s", param.arquivo);
+	CreateDirectory(diretorioSaida, NULL);
 
-	//buscaLocal(param, atrib, quant_atrib, exemplos, quant_exemp);
-	//regra* regras = geraRegras(param, param.quant_regras_pareto, atrib, quant_atrib, param.classe, exemplos, quant_exemp);
-	//regiao_pareto pareto = dominanciaDePareto(param, regras, param.quant_regras_pareto);
-	//imprimeDominioPareto(pareto, quant_atrib);
+	//inicializa arquivo onde serão escritos os dados das matrizes de confusão referentes aos testes em cada partição.
+	char nomeArquivoMatrizConf[20 + tamanhoDiretorioSaida];
+	sprintf(nomeArquivoMatrizConf, "%s/matriz_confusao.txt", diretorioSaida);
+	FILE* outputMatrizConf = fopen(nomeArquivoMatrizConf, "w");
 
-	int i;
-	for (i = 0; i < param.execucoes; i++){
-		FILE* arq_solucao = criaArquivo(i);
-		regiao_pareto solucao = SPSO(param, exemplos, quant_exemp, atrib, quant_atrib, arq_solucao);
+	//inicializa arquivo onde serão escritos os tempos de execução de processamento.
+	char nomeArquivoTemposExecucao[40 + tamanhoDiretorioSaida];
+	sprintf(nomeArquivoTemposExecucao, "%s/tempos_execucao.txt", diretorioSaida);
+	FILE* outputTempo = fopen(nomeArquivoTemposExecucao, "w");
+
+	//INICIA PROCESSAMENTO POR PARTIÇÕES DE ARQUIVOS DE TREINAMENTO E DE TESTE
+
+	for (int i = 0; i < 10; i++){
+
+		//carrega arquivos de entrada de exemplos
+		FILE* input = carregarArqDados(param.arquivo, i);
+
+		//carrega arquivo que receberá as regras de saída (soluções)
+		char nomeArquivoSaida[20 + tamanhoDiretorioSaida];
+		sprintf(nomeArquivoSaida, "%s/saida%d.txt", diretorioSaida, i);
+		FILE* output = fopen(nomeArquivoSaida, "w");
+
+		//carrega arquito de teste do classificador final
+		FILE* teste = carregarArqTeste(param.arquivo, i);
+
+		//carrega atributos
+		int quant_atrib = contaAtributos(input);																					// quantidade de atributos dos elementos da base de dados;
+		atributo* atrib = (atributo*)calloc(quant_atrib, sizeof(atributo));														// ponteiro para alocação dinâmica do vetor com atributos;
+		if (atrib == NULL){
+
+			printf("\nErro de alcocacao!");
+			system("pause");
+			exit(1);
+		}
+		processaAtributos(atrib, quant_atrib, input);																				//preenche vetor de atributos da classe;
+		imprimeAtributos(atrib, quant_atrib);
+
+		//carrega exemplos de treino
+		int quant_exemp = contaExemplos(input);																						// quantidade de exemplos da base de dados;
+		exemplo* exemplos = (exemplo*)calloc(quant_exemp, sizeof(exemplo));														// ponteiro para alocação dinâmica do vetor com exemplos;
+		if (exemplos == NULL){
+
+			printf("\nErro de alcocacao!");
+			system("pause");
+			exit(1);
+		}
+		processaExemplos(atrib, quant_atrib, exemplos, input);
+
+		//carrega exemplos de teste do classificador final
+		int quant_exemp_test = contaExemplos(teste);
+		exemplo *testes = (exemplo*)calloc(quant_exemp_test, sizeof(exemplo));
+		processaExemplos(atrib, quant_atrib, testes, teste);
+
+		//configura aleatoriedade
+		srand((unsigned)time(NULL));
+
+		//INICIALIZA TIMERS
+
+		//declara marcadores de tempo de início e fim
+		clock_t eventoInicio, eventoFim;
+
+		//inicializa variável que armazenará o tempo de execução do PSO.
+		double tempo = 0;
+
+		//INÍCIO DO PSO
+
+		eventoInicio = clock();
+		regiao_pareto pareto = SPSO(param, exemplos, quant_exemp, atrib, quant_atrib, output);
+		eventoFim = clock();
+		tempo = ((double)(eventoFim - eventoInicio) / CLOCKS_PER_SEC);
+
+		//FIM DO PSO
+
+		//imprimeSolucao(solucao, atrib, quant_atrib);
+		//criaArquivosObjSolucao(solucao, param);
+
+		//INICIA PROCESSO DE AVALIAÇÃO DO CLASSIFICADOR
+
+		//imprimeExemplosInt(testes, quant_exemp_test);
+
+		classificador c = inicializaClassificador(pareto.solucoes, pareto.quant_sol_pareto);
+		ordenaRegrasMaiorEspecificidade(c.regras, c.quant_regras);
+		classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
+
+		//imprime matriz no arquivo final
+		for (int i = 0; i < quant_mat_conf; i++){
+			printf("\nMatConf[%d]: %d", i, c.mat_conf[i]);
+			fprintf(outputMatrizConf, "MatConf[%d]: %d\n", i, c.mat_conf[i]);
+		}
+		fprintf(outputMatrizConf, "\n", i, c.mat_conf[i]);
+
+		//ARMAZENA TEMPO DE EXECUÇÃO MEDIDO
+		fprintf(outputTempo, "%fs\n", tempo);
+
+		fclose(input);
+		fclose(output);
+		free(atrib);
+		free(exemplos);
 	}
 
-	//imprimeSolucao(solucao, atrib, quant_atrib);
-	//criaArquivosObjSolucao(solucao, param);
+	//FIM DO PROGRAMA
 
 	fclose(arq_parametros);
-	fclose(input);
-
+	fclose(outputMatrizConf);
+	fclose(outputTempo);
 	system("pause");
 
 	return 0;
