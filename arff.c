@@ -90,7 +90,6 @@ typedef struct classificador classificador;
 struct parametros{
 
 	char* arquivo;																												// diretório do arquivo de treino .arff;
-	char* arquivo_teste;																										// diretório do arquivo de teste .arff;
 	int execucoes;																												// número de execuções do algoritmo;
 	int classe;																													// define se regras geradas serão para classe positiva (1), negativa (0) ou ambas (-1);	
 	int funcao_obj;																												// função objetivo a ser usada na B.L;	
@@ -904,7 +903,6 @@ char* localizaString(char* string, FILE* arq){
 void carregaParametros(FILE* file, parametros* param){
 
 	(*param).arquivo = strtok(saltaStringArq("@arquivo_treino:", file), "\n");
-	(*param).arquivo_teste = strtok(saltaStringArq("@arquivo_teste:", file), "\n");
 	(*param).execucoes = atoi(saltaStringArq("@execucoes:", file));
 	(*param).classe = atoi(saltaStringArq("@classe:", file));
 	(*param).funcao_obj = atoi(saltaStringArq("@funcao_objetivo:", file));
@@ -926,7 +924,6 @@ void imprimeParametros(parametros param){
 
 	printf("\nParametros:\n\n");
 	printf("Arquivo de treino = %s\n", param.arquivo);
-	printf("Arquivo de teste = %s\n", param.arquivo_teste);
 	printf("Execucoes = %d\n", param.execucoes);
 	printf("Classe = %d\n", param.classe);
 	printf("Funcao Objetivo = %d\n", param.funcao_obj);
@@ -3061,16 +3058,18 @@ int main(){
 	carregaParametros(arq_parametros, &h_param); //recupera referência às funções objetivo originais presentes no device
 
 	//cria diretório onde serão colocados todos os arquivos de saída
-	char diretorioSaida[10] = "saida";
+	const int tamanhoDiretorioSaida = 40;
+	char diretorioSaida[tamanhoDiretorioSaida];
+	sprintf(diretorioSaida, "saida-%s", h_param.arquivo);
 	CreateDirectory(diretorioSaida, NULL);
 
 	//inicializa arquivo onde serão escritos os dados das matrizes de confusão referentes aos testes em cada partição.
-	char nomeArquivoMatrizConf[20];
+	char nomeArquivoMatrizConf[20 + tamanhoDiretorioSaida];
 	sprintf(nomeArquivoMatrizConf, "%s/matriz_confusao.txt", diretorioSaida);
 	FILE* outputMatrizConf = fopen(nomeArquivoMatrizConf, "w");
 
 	//inicializa arquivo onde serão escritos os tempos de execução de processamento.
-	char nomeArquivoTemposExecucao[40];
+	char nomeArquivoTemposExecucao[40 + tamanhoDiretorioSaida];
 	sprintf(nomeArquivoTemposExecucao, "%s/tempos_execucao.txt", diretorioSaida);
 	FILE* outputTempo = fopen(nomeArquivoTemposExecucao, "w");
 
@@ -3080,9 +3079,9 @@ int main(){
 
 		//carrega arquivos de entrada de exemplos
 		FILE* input = carregarArqDados(h_param.arquivo, i);
-		
+
 		//carrega arquivo que receberá as regras de saída (soluções)
-		char nomeArquivoSaida[20];
+		char nomeArquivoSaida[20 + tamanhoDiretorioSaida];
 		sprintf(nomeArquivoSaida, "%s/saida%d.txt", diretorioSaida, i);
 		FILE* output = fopen(nomeArquivoSaida, "w");
 
@@ -3160,7 +3159,7 @@ int main(){
 
 		//declara marcadores de tempo de início e fim
 		cudaEvent_t eventoInicio, eventoFim;
-		
+
 		//inicializa marcadores de tempo
 		cudaEventCreate(&eventoInicio);
 		cudaEventCreate(&eventoFim);
@@ -3169,10 +3168,10 @@ int main(){
 
 		printf("Inicio de processamento no kernel\n");
 		cudaEventRecord(eventoInicio);
-		
+
 		SPSOMultiEnxame << <h_param.quant_enxames, h_param.quant_particulas, h_param.quant_particulas * sizeof(particula) >> >
 			(d_param, exemplos_d, quant_exemp, atrib_d, quant_atrib, output, enxames_d, posicoes_d, devStates);
-		
+
 		cudaDeviceSynchronize();
 		cudaEventRecord(eventoFim);
 		printf("Fim de processamento no kernel\n");
