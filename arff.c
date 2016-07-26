@@ -96,6 +96,7 @@ struct parametros{
 	char* funcoes_obj_pareto;																									// sequência de bits que indicam as funções objetivos a serem consideradas na dominância de Pareto;
 	int quant_regras_pareto;																									// nº de regras que serão geradas e analisadas quanto à dominância de pareto; 
 	int quant_particulas;																										// quantidade de partículas de um enxame;
+	int quant_enxames;																											// quantidade de enxames;
 	int tamanho_arquivo;																										// quantidade máxima de soluções do S-PSO
 	int metodo_dopagem_solucao;																									// forma de inserir regras dominadas temporariamente no arquivo solução;
 	int metodo_gerar_regras;																									// forma de gerar regras aleatórias. Gerar regras uniformimente aleatórias = 0, privilegiar o valor "_" = 1 (caso seja 1, atribuir um valor ao campo "prob_valor_vazio");
@@ -908,6 +909,7 @@ void carregaParametros(FILE* file, parametros* param){
 	(*param).funcoes_obj_pareto = strtok(saltaStringArq("@dominancia_de_pareto:", file), "\n");
 	(*param).quant_regras_pareto = atoi(saltaStringArq("@quant_regras_pareto:", file));
 	(*param).quant_particulas = atoi(saltaStringArq("@quant_particulas:", file));
+	(*param).quant_enxames = atoi(saltaStringArq("@quant_enxames:", file));
 	(*param).tamanho_arquivo = atoi(saltaStringArq("@tamanho_arquivo:", file));
 	(*param).metodo_dopagem_solucao = atoi(saltaStringArq("@metodo_dopagem_solucao:", file));
 	(*param).metodo_gerar_regras = atoi(saltaStringArq("@metodo_gerar_regras:", file));
@@ -928,6 +930,7 @@ void imprimeParametros(parametros param){
 	printf("Funcoes objetivo de Pareto = %s\n", param.funcoes_obj_pareto);
 	printf("Quantidade de regras de Pareto = %d\n", param.quant_regras_pareto);
 	printf("Quantidade de particulas = %d\n", param.quant_particulas);
+	printf("Quantidade de enxames = %d\n", param.quant_enxames);
 	printf("Tamanho maximo do arquivo = %d\n", param.tamanho_arquivo);
 	printf("Método de dopagem de solucao = %d\n", param.metodo_dopagem_solucao);
 	printf("Método de geração de regras = %d\n", param.metodo_gerar_regras);
@@ -2106,7 +2109,9 @@ int calculaVotacao(regra* votantes, int quant_votantes, int func_ob, int quant_a
 		}
 	}
 
-	return votos >= 0 ? 0 : 1;	//se > 0, votaram que o exemplo é da classe positiva
+	if (votos > 0) return 1;	//caso em que votaram na classe positiva
+	else if (votos < 0) return 0;	//caso em que votaram na classe negativa
+	else return rand() % 2;	//caso em que não houve votação (vota aleatoriamente)
 }
 
 void classificaExemplos(classificador* c, exemplo* exemplos, int quant_exemp, int quant_atrib){
