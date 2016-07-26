@@ -2481,7 +2481,7 @@ __device__ regiao_pareto device_inicializaPareto(parametros param){
 	pareto.solucoes = (regra*)malloc(1 * sizeof(regra));
 	if (pareto.solucoes == NULL){
 
-		printf("\nErro de alcocacao! 'device_enxameParaRegras'");
+		printf("\nErro de alcocacao! 'device_inicializaPareto'");
 	}
 
 	pareto.solucoes[0].nula = 1;
@@ -3003,7 +3003,9 @@ int calculaVotacao(regra* votantes, int quant_votantes, int func_ob, int quant_a
 		}
 	}
 
-	return votos >= 0 ? 0 : 1;	//se > 0, votaram que o exemplo é da classe positiva
+	if (votos > 0) return 1;	//caso em que votaram na classe positiva
+	else if (votos < 0) return 0;	//caso em que votaram na classe negativa
+	else return rand() % 2;	//caso em que não houve votação (vota aleatoriamente)
 }
 
 void classificaExemplos(classificador* c, exemplo* exemplos, int quant_exemp, int quant_atrib){
@@ -3098,7 +3100,7 @@ int main(){
 			system("pause");
 		}
 		processaAtributos(atrib_h, quant_atrib, input);	//preenche vetor de atributos da classe;
-		imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
+		//imprimeAtributos(atrib_h, quant_atrib);	//imprime todas as informações contidas no vetor de atributos;
 		cudaMemcpy(atrib_d, atrib_h, sizeof(atributo) * quant_atrib, cudaMemcpyHostToDevice);
 
 		//carrega exemplos de treino
@@ -3181,6 +3183,7 @@ int main(){
 		cudaMemcpy(posicoes_h, posicoes_d, sizeof(regra) * quant_total_particulas, cudaMemcpyDeviceToHost);
 		posicoes_h = apagaRegrasIguais(posicoes_h, &quant_total_particulas, quant_atrib);
 		regiao_pareto pareto = dominanciaDePareto(h_param, posicoes_h, quant_total_particulas);
+		removeDominadas(&pareto);
 		insereSolucoesEmArquivo(pareto, h_param, output);
 		insereNomesSolucoesArquivo(pareto, h_param, output, atrib_h, quant_atrib);
 		imprimeDominioPareto(pareto, quant_atrib);
