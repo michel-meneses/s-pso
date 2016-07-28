@@ -250,7 +250,7 @@ FILE* carregarArqTeste(char nomeBase[], int numero){
 
 	//Constroi nome completo do diretório da partição de teste.
 	char nomeArquivo[40];
-	sprintf(nomeArquivo, "bases/%s/it%d/%s_data.arff", nomeBase, numero, nomeBase);
+	sprintf(nomeArquivo, "bases/%s/it%d/%s_test.arff", nomeBase, numero, nomeBase);
 
 	//Abre arquivo da partição de teste.
 	FILE* teste = fopen(nomeArquivo, "r");
@@ -436,7 +436,7 @@ char* getNomeValorAtributo(atributo* atrib, int quant_atrib, int indice_atrib, i
 /* Conta o número de exemplos da base de dados */
 int contaExemplos(FILE* input){
 
-	const int tam_str_aux = 1000;																									// define o tamanho máximo de uma linha a ser lida;
+	const int tam_str_aux = 3000;																									// define o tamanho máximo de uma linha a ser lida;
 	char* pont;
 	int contagem = 1;
 
@@ -3003,8 +3003,8 @@ int calculaVotacao(regra* votantes, int quant_votantes, int func_ob, int quant_a
 		}
 	}
 
-	if (votos > 0) return 1;	//caso em que votaram na classe positiva
-	else if (votos < 0) return 0;	//caso em que votaram na classe negativa
+	if (votos > 0) return 0;	//caso em que votaram na classe positiva
+	else if (votos < 0) return 1;	//caso em que votaram na classe negativa
 	else return rand() % 2;	//caso em que não houve votação (vota aleatoriamente)
 }
 
@@ -3191,7 +3191,7 @@ int main(){
 		//INICIA PROCESSO DE AVALIAÇÃO DO CLASSIFICADOR
 
 		//imprimeExemplosInt(testes, quant_exemp_test);
-
+		
 		classificador c = inicializaClassificador(pareto.solucoes, pareto.quant_sol_pareto);
 		ordenaRegrasMaiorEspecificidade(c.regras, c.quant_regras);
 		classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
@@ -3211,6 +3211,7 @@ int main(){
 
 		//fecha arquivos desta partição e limpa memória cuda.
 		fclose(input);
+		fclose(teste);
 		fclose(output);
 
 		cudaFree(atrib_h);
