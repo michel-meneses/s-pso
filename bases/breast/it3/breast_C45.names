@@ -1,0 +1,14 @@
+| Class feature
+class.
+
+| Features
+ClumpThickness_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+UniformityofCellSize_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+UniformityofCellShape_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+MarginalAdhesion_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+SingleEpithelialCellSize_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+BareNuclei_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+BlandChromatin_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+NormalNucleoli_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~8.2","8.2~MaxValue").
+Mitoses_discretized: enumerated("MinValue~1.9","1.9~2.8","2.8~3.7","3.7~4.6","4.6~5.5","5.5~6.4","6.4~7.3","7.3~MaxValue").
+class: nominal(positive,negative).

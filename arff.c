@@ -4,7 +4,6 @@
 #include<string.h>
 #include<stdlib.h>
 #include<time.h>
-#include <curand_kernel.h>
 #include <math.h>
 #include <windows.h>
 
@@ -14,7 +13,7 @@
 #define tam_val 60																													// tamanho máximo do nome de um valor;
 #define quant_max_atrib 100																											// quantidade máxima de atributos do arquivo;
 #define quant_mat_cont 8																											// quantidade de posições no vetor da matriz de contigência;
-#define quant_func_ob 8																												// quantidade de posições no vetor das funções objetivo;
+#define quant_func_ob 13																											// quantidade de posições no vetor das funções objetivo;
 #define quant_mat_conf 4																											// quantidade de posições no vetor da matriz de confusão;
 
 /* posições da matriz de contingência */
@@ -33,9 +32,14 @@
 #define NEGREL 2																													// confiança negativa;
 #define ACCLP 3																														// precisão de Laplace;
 #define SENS 4																														// sensitividade;
-#define SPEC 5																														// cobertura;
-#define COV 6																														// suporte;
-#define SUP 7
+#define SPEC 5																														// especificidade;
+#define COV 6																														// cobertura;
+#define SUP 7																														// suporte;
+#define CONV 8																														// convicção;
+#define LIFT 9																														// lift;
+#define CF 10																														// certainty factor;
+#define NETC 11																														// netconf;
+#define YULE 12																														// yule'sQ
 
 /* posições da matriz de confusão */
 #define TP 0																														// positivo verdadeiro
@@ -191,7 +195,8 @@ FILE* carregarArqDados(char nomeBase[], int numero){
 
 	//Percorre a pasta de cada partição e a copia para o arquivo final.
 	const int maximoParticoes = 10;
-	for (int i = 0; i < maximoParticoes; i++){
+	int i;
+	for (i = 0; i < maximoParticoes; i++){
 		if (i != numero){
 
 			//Constroi nome completo do diretório da partição atualmente consultada.
@@ -765,6 +770,28 @@ void calculaFuncoesObj(regra* r, int quant_atrib, atributo* atrib, int quant_exe
 		(*r).func_ob[SUP] = (double)((*r).mat_cont[BH]) / quant_exemp;
 	else
 		(*r).func_ob[SUP] = -1;
+	if ((*r).mat_cont[B_H] != 0)
+		(*r).func_ob[CONV] = (double)((*r).mat_cont[B] * (*r).mat_cont[_H] != 0) / (*r).mat_cont[B_H];
+	else
+		(*r).func_ob[CONV] = 1;
+	if ((*r).mat_cont[B] * (*r).mat_cont[H] != 0)
+		(*r).func_ob[LIFT] = (double) (*r).mat_cont[BH]/((*r).mat_cont[B] * (*r).mat_cont[H]);
+	else
+		(*r).func_ob[LIFT] = 1;
+	if((*r).func_ob[ACC] > (*r).mat_cont[H] && 1 - (*r).mat_cont[H] != 0)
+		(*r).func_ob[CF] = (double) ((*r).func_ob[ACC] - (*r).mat_cont[H])/(1 - (*r).mat_cont[H]);
+	else if((*r).func_ob[ACC] < (*r).mat_cont[H] && (*r).mat_cont[H] != 0)
+		(*r).func_ob[CF] = (double) ((*r).func_ob[ACC] - (*r).mat_cont[H])/(*r).mat_cont[H];
+	else
+		(*r).func_ob[CF] = 0;
+	if ((*r).mat_cont[B] * (1 - (*r).mat_cont[B]) != 0)
+		(*r).func_ob[NETC] = (double) ((*r).mat_cont[BH] - (*r).mat_cont[B] * (*r).mat_cont[H])/((*r).mat_cont[B] * (1 - (*r).mat_cont[B]));
+	else
+		(*r).func_ob[NETC] = 0;
+	if ((*r).mat_cont[BH] * (*r).mat_cont[_B_H] + (*r).mat_cont[B_H] * (*r).mat_cont[_BH] != 0)
+		(*r).func_ob[YULE] = (double) ((*r).mat_cont[BH] * (*r).mat_cont[_B_H] - (*r).mat_cont[B_H] * (*r).mat_cont[_BH])/((*r).mat_cont[BH] * (*r).mat_cont[_B_H] + (*r).mat_cont[B_H] * (*r).mat_cont[_BH]);
+	else
+		(*r).func_ob[YULE] = 0;
 }
 
 void imprimeFuncoesObj(regra r){
@@ -778,6 +805,11 @@ void imprimeFuncoesObj(regra r){
 	printf("\n%30s %.5f", "Especificidade = ", r.func_ob[SPEC]);
 	printf("\n%30s %.5f", "Cobertura = ", r.func_ob[COV]);
 	printf("\n%30s %.5f", "Suporte = ", r.func_ob[SUP]);
+	printf("\n%30s %.5f", "Conviction = ", r.func_ob[CONV]);
+	printf("\n%30s %.5f", "Lift = ", r.func_ob[LIFT]);
+	printf("\n%30s %.5f", "Certainty factor = ", r.func_ob[CF]);
+	printf("\n%30s %.5f", "Netconf = ", r.func_ob[NETC]);
+	printf("\n%30s %.5f", "Yule'sQ = ", r.func_ob[YULE]);
 }
 
 void imprimeFuncaoObj(regra r, int indice){
@@ -807,6 +839,21 @@ void imprimeFuncaoObj(regra r, int indice){
 		break;
 	case SUP:
 		printf("\n%30s %.5f", "Suporte = ", r.func_ob[SUP]);
+		break;
+	case CONV:
+		printf("\n%30s %.5f", "Conviction = ", r.func_ob[CONV]);
+		break;
+	case LIFT:
+		printf("\n%30s %.5f", "Lift = ", r.func_ob[LIFT]);
+		break;
+	case CF:
+		printf("\n%30s %.5f", "Certainty factor = ", r.func_ob[CF]);
+		break;
+	case NETC:
+		printf("\n%30s %.5f", "Netconf = ", r.func_ob[NETC]);
+		break;
+	case YULE:
+		printf("\n%30s %.5f", "Yule'sQ = ", r.func_ob[YULE]);
 		break;
 	}
 }
@@ -2160,8 +2207,8 @@ int main(){
 	FILE* outputTempo = fopen(nomeArquivoTemposExecucao, "w");
 
 	//INICIA PROCESSAMENTO POR PARTIÇÕES DE ARQUIVOS DE TREINAMENTO E DE TESTE
-
-	for (int i = 0; i < 10; i++){
+	int i;
+	for (i = 0; i < 10; i++){
 
 		//carrega arquivos de entrada de exemplos
 		FILE* input = carregarArqDados(param.arquivo, i);
@@ -2234,9 +2281,10 @@ int main(){
 		classificaExemplos(&c, testes, quant_exemp_test, quant_atrib);
 
 		//imprime matriz no arquivo final
-		for (int i = 0; i < quant_mat_conf; i++){
-			printf("\nMatConf[%d]: %d", i, c.mat_conf[i]);
-			fprintf(outputMatrizConf, "MatConf[%d]: %d\n", i, c.mat_conf[i]);
+		int j;
+		for (j = 0; j < quant_mat_conf; j++){
+			printf("\nMatConf[%d]: %d", j, c.mat_conf[j]);
+			fprintf(outputMatrizConf, "MatConf[%d]: %d\n", j, c.mat_conf[j]);
 		}
 		fprintf(outputMatrizConf, "\n", i, c.mat_conf[i]);
 

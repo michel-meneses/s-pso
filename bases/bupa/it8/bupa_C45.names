@@ -1,0 +1,11 @@
+| Class feature
+class.
+
+| Features
+mcv_discretized: enumerated("MinValue~68.8","68.8~MaxValue").
+alkphos_discretized: enumerated("MinValue~34.5","34.5~46.0","46.0~57.5","57.5~69.0","69.0~80.5","80.5~92.0","92.0~103.5","103.5~MaxValue").
+sgpt_discretized: enumerated("MinValue~19.1","19.1~34.2","34.2~49.3","49.3~64.4","64.4~MaxValue").
+sgot_discretized: enumerated("MinValue~12.7","12.7~20.4","20.4~28.1","28.1~35.8","35.8~43.5","43.5~51.2","51.2~MaxValue").
+gammagt_discretized: enumerated("MinValue~34.2","34.2~63.4","63.4~92.6","92.6~MaxValue").
+drinks_discretized: enumerated("MinValue~2.0","2.0~4.0","4.0~6.0","6.0~8.0","8.0~MaxValue").
+class: nominal(positive,negative).

@@ -1,0 +1,50 @@
+MatConf[0]: 9
+MatConf[1]: 7
+MatConf[2]: 13
+MatConf[3]: 7
+
+MatConf[0]: 11
+MatConf[1]: 9
+MatConf[2]: 11
+MatConf[3]: 5
+
+MatConf[0]: 9
+MatConf[1]: 8
+MatConf[2]: 12
+MatConf[3]: 7
+
+MatConf[0]: 1
+MatConf[1]: 6
+MatConf[2]: 14
+MatConf[3]: 15
+
+MatConf[0]: 7
+MatConf[1]: 6
+MatConf[2]: 14
+MatConf[3]: 9
+
+MatConf[0]: 6
+MatConf[1]: 9
+MatConf[2]: 11
+MatConf[3]: 9
+
+MatConf[0]: 5
+MatConf[1]: 5
+MatConf[2]: 15
+MatConf[3]: 10
+
+MatConf[0]: 4
+MatConf[1]: 5
+MatConf[2]: 15
+MatConf[3]: 11
+
+MatConf[0]: 7
+MatConf[1]: 8
+MatConf[2]: 12
+MatConf[3]: 8
+
+MatConf[0]: 9
+MatConf[1]: 12
+MatConf[2]: 8
+MatConf[3]: 6
+

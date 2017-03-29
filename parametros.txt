@@ -1,0 +1,31 @@
+@arquivo_treino:bupa
+@execucoes:1
+@classe:1
+@funcao_objetivo:0
+@num_inter_bl:25
+@num_vizinhos_bl:222
+@dominancia_de_pareto:0000110000000
+@quant_regras_pareto:5
+@quant_particulas:4
+@quant_enxames:250
+@tamanho_arquivo:2
+@metodo_dopagem_solucao:1
+@metodo_gerar_regras:1
+@prob_valor_vazio:90
+@fim
+
+-> "arquivo_treino": diretório do arquivo .arff contendo o cabeçalho dos atributos e os exemplos
+-> "arquivo_treino": diretório do arquivo .arff contendo o cabeçalho dos atributos e os exemplos de teste do classificador
+-> "execucoes": quantas vezes o algoritmo será executado
+-> para gerar regras para classe positiva, "classe" = 0; já para classe negativa, "classe" = 1; para ambas, classe = -1
+-> "funcao_objetivo": ACC = 0, ERR = 1, NEGREL = 2, ACCLP = 3, SENS = 4, SPEC = 5, COV = 6, SUP = 7
+-> "num_inter_bl" = nº máximo de interações da busca local
+-> "num_vizinhos_bl" = nº de vizinhos de uma regra a serem gerados durante cada interação do algoritmo de busca local
+-> "dominancia_de_pareto" = cada dígito representa a função objetivo (acc, err, negrel, acclp, sens, spec, cov, sup) a ser considerada (dígito 1) ou não (dígito 0) durante o cálculo da dominância de pareto
+-> "quant_regras_pareto" = nº de regras que serão geradas e analisadas quanto à dominância de pareto 
+-> "quant_particulas" = define a quantidade de partículas de um enxame
+-> "quant_enxames" = define a quantidade de enxames que serão gerados
+-> "tamanho_arquivo" = quantidade máxima de soluções do S-PSO
+-> "metodo_dopagem_solucao" = forma de inserir regras dominadas temporariamente no arquivo solução. Por ordem de menos dominadores = 0, por ordem de maior crowding distance = 1, sem dopagem = -1
+-> "metodo_gerar_regras" = forma de gerar regras aleatórias. Gerar regras uniformimente aleatórias = 0, privilegiar o valor vazio "_" = 1 (caso seja 1, atribuir um valor ao campo "prob_valor_vazio");
+-> "prob_valor_vazio" = probabilidade do valor vazio ser atribuído a um atributo de uma regra gerada aleatoriamente (só é usado caso o valor do campo "metodo_gerar_regras" seja 1). Recebe valores inteiro entre 0 e 100;
